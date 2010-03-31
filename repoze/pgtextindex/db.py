@@ -33,10 +33,12 @@ class PGDatabaseConnector(object):
                              database_name)
         databases[database_name] = self
 
-    def open(self, version=None, transaction_manager=None):
+    def open(self, version=None, before=None, transaction_manager=None):
         if version:
             raise ValueError("Versions are not supported by this database.")
-        m = ConnectionManager(self, self.database_name)
+        if before:
+            raise ValueError("I don't know what to do with 'before' argument.")
+        m = PGConnectionManager(self, self.database_name)
         m.open(transaction_manager)
         return m
 
@@ -141,6 +143,6 @@ def safe_close(obj):
 def get_connection_manager(zodb_conn, dsn, database_name):
     if database_name not in zodb_conn.db().databases:
         # install into the database map
-        db = DatabaseConnector(dsn, database_name)
+        db = PGDatabaseConnector(dsn, database_name)
         zodb_conn.db().databases[database_name] = db
     return zodb_conn.get_connection(database_name)
