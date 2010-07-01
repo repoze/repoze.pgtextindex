@@ -55,8 +55,11 @@ Summarizing the default operator rules:
 $Id: queryparser.py 70826 2006-10-20 03:41:16Z baijum $
 """
 
-import re
 from zope.index.text import parsetree
+from zope.index.text.interfaces import IQueryParser
+from zope.interface import implements
+import re
+
 
 # Create unique symbols for token types.
 _AND    = intern("AND")
@@ -91,7 +94,15 @@ _tokenizer_regex = re.compile(r"""
     )
 """, re.VERBOSE)
 
+_quote_re = re.compile(r'^"([^"]*)"$')
+
+
 class QueryParser(object):
+
+    implements(IQueryParser)
+
+    def __init__(self):
+        self._ignored = []
 
     def parseQuery(self, query):
         # Lexical analysis.
@@ -106,12 +117,21 @@ class QueryParser(object):
         self._index = 0
 
         # Syntactical analysis.
+        self._ignored = []  # Ignored words in the query, for parseQueryEx
         tree = self._parseOrExpr()
         self._require(_EOF)
         if tree is None:
             raise parsetree.ParseError(
                 "Query contains only common words: %s" % repr(query))
         return tree
+
+    def getIgnored(self):
+        return self._ignored
+
+    def parseQueryEx(self, query):
+        tree = self.parseQuery(query)
+        ignored = self.getIgnored()
+        return tree, ignored
 
     # Recursive descent parser
 
@@ -203,7 +223,7 @@ class QueryParser(object):
             structure = [(isinstance(nodes[i], parsetree.NotNode), i, nodes[i])
                          for i in range(len(nodes))]
             structure.sort()
-            nodes = [node for (bit, index, node) in structure]
+            nodes = [node for (_, index, node) in structure]
             if isinstance(nodes[0], parsetree.NotNode):
                 raise parsetree.ParseError(
                     "a term must have at least one positive word")
@@ -213,17 +233,26 @@ class QueryParser(object):
         return tree
 
     def _parseAtom(self):
+        invert = False
         term = self._get(_ATOM)
-        if isinstance(term, basestring):
-            words = [term]
+        if term.startswith('-'):
+            term = term[1:]
+            invert = True
+        mo = _quote_re.match(term)
+        if mo is not None:
+            words = filter(None, mo.group(1).split())
         else:
-            words = term
+            words = [term]
+
+        if not words:
+            self._ignored.append(term)
+            return None
         if len(words) > 1:
             tree = parsetree.PhraseNode(words)
         elif '*' in words[0] or '?' in words[0]:
             tree = parsetree.GlobNode(words[0])
         else:
             tree = parsetree.AtomNode(words[0])
-        if term[0] == "-":
+        if invert:
             tree = parsetree.NotNode(tree)
         return tree

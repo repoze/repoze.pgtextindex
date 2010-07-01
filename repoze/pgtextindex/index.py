@@ -1,8 +1,8 @@
 
 from persistent import Persistent
 from repoze.catalog.interfaces import ICatalogIndex
-from repoze.pgtextindex.queryconvert import convert_query
 from repoze.pgtextindex.db import PostgresConnectionManager
+from repoze.pgtextindex.queryconvert import convert_query
 from zope.index.interfaces import IIndexSort
 from zope.interface import implements
 import BTrees

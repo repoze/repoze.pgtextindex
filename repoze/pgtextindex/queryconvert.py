@@ -28,7 +28,10 @@ class ParseTreeEncoder:
         return ' | '.join('( %s )' % self.encode(c) for c in children)
 
     def get_string(self, node):
-        res = node.getValue().replace("'", "").replace('"', '')
+        value = node.getValue()
+        if not isinstance(value, basestring):
+            value = ' '.join(value)
+        res = value.replace("'", "").replace('"', '')
         res = res.replace('*', '').replace('?', '')
         return res
 

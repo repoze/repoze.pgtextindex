@@ -1,7 +1,6 @@
 
 from transaction.interfaces import IDataManager
 from zope.interface import implements
-import psycopg2
 import psycopg2.extensions
 import transaction
 
