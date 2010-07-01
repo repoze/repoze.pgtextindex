@@ -2,11 +2,12 @@
 from persistent import Persistent
 from repoze.catalog.interfaces import ICatalogIndex
 from repoze.pgtextindex.queryconvert import convert_query
-from repoze.pgtextindex.db import get_connection_manager
+from repoze.pgtextindex.db import PostgresConnectionManager
 from zope.index.interfaces import IIndexSort
 from zope.interface import implements
 import BTrees
 import psycopg2
+
 
 _marker = object()
 
@@ -14,6 +15,8 @@ class PGTextIndex(Persistent):
     implements(ICatalogIndex, IIndexSort)
 
     family = BTrees.family32
+
+    _v_temp_cm = None  # A PostgresConnectionManager used during initialization
 
     def __init__(self,
             discriminator,
@@ -33,12 +36,33 @@ class PGTextIndex(Persistent):
         self.ts_config = ts_config
         self.drop_and_create()
 
+    @property
+    def connection_manager(self):
+        jar = self._p_jar
+        oid = self._p_oid
+
+        if jar is None or oid is None:
+            # Not yet stored in ZODB, so use _v_temp_cm
+            cm = self._v_temp_cm
+            if cm is None or cm.dsn != self.dsn:
+                self._v_temp_cm = cm = PostgresConnectionManager(self.dsn)
+
+        else:
+            fc = getattr(jar, 'foreign_connections', None)
+            if fc is None:
+                jar.foreign_connections = fc = {}
+
+            cm = fc.get(oid)
+            if cm is None or cm.dsn != self.dsn:
+                cm = PostgresConnectionManager(self.dsn)
+                fc[oid] = cm
+
+        return cm
+
     def drop_and_create(self):
         conn = psycopg2.connect(self.dsn)
         cursor = conn.cursor()
         try:
-            # TODO: use a separate lock table?
-
             # create the table with 2 columns: the integer docid
             # and a tsvector object.
             stmt = """
@@ -62,14 +86,14 @@ class PGTextIndex(Persistent):
 
     @property
     def read_cursor(self):
-        m = get_connection_manager(self._p_jar, self.dsn, self.database_name)
-        return m.cursor
+        cm = self.connection_manager
+        return cm.cursor
 
     @property
     def write_cursor(self):
-        m = get_connection_manager(self._p_jar, self.dsn, self.database_name)
-        m.set_changed()
-        return m.cursor
+        cm = self.connection_manager
+        cm.set_changed()
+        return cm.cursor
 
     def index_doc(self, docid, obj):
         """Add a document to the index.
@@ -242,4 +266,3 @@ class PGTextIndex(Persistent):
         if limit:
             result = result[:limit]
         return result
-

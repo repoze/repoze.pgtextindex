@@ -40,4 +40,3 @@ class ParseTreeEncoder:
 
     def encode_GLOB(self, node):
         return "'%s':*" % self.get_string(node)
-
