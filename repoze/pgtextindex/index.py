@@ -6,16 +6,15 @@ from repoze.pgtextindex.queryconvert import convert_query
 from zope.index.interfaces import IIndexSort
 from zope.interface import implements
 import BTrees
-import psycopg2
-
 
 _marker = object()
+
 
 class PGTextIndex(Persistent):
     implements(ICatalogIndex, IIndexSort)
 
     family = BTrees.family32
-
+    connection_manager_factory = PostgresConnectionManager
     _v_temp_cm = None  # A PostgresConnectionManager used during initialization
 
     def __init__(self,
@@ -23,7 +22,9 @@ class PGTextIndex(Persistent):
             dsn,
             table='pgtextindex',
             database_name='pgtextindex',
-            ts_config='english'):
+            ts_config='english',
+            connection_manager_factory=None):
+
         if not callable(discriminator):
             if not isinstance(discriminator, basestring):
                 raise ValueError('discriminator value must be callable or a '
@@ -34,6 +35,8 @@ class PGTextIndex(Persistent):
         self._subs = dict(table=table)  # map of query string substitutions
         self.database_name = database_name
         self.ts_config = ts_config
+        if connection_manager_factory is not None:
+            self.connection_manager_factory = connection_manager_factory
         self.drop_and_create()
 
     @property
@@ -45,7 +48,8 @@ class PGTextIndex(Persistent):
             # Not yet stored in ZODB, so use _v_temp_cm
             cm = self._v_temp_cm
             if cm is None or cm.dsn != self.dsn:
-                self._v_temp_cm = cm = PostgresConnectionManager(self.dsn)
+                cm = self.connection_manager_factory(self.dsn)
+                self._v_temp_cm = cm
 
         else:
             fc = getattr(jar, 'foreign_connections', None)
@@ -54,14 +58,16 @@ class PGTextIndex(Persistent):
 
             cm = fc.get(oid)
             if cm is None or cm.dsn != self.dsn:
-                cm = PostgresConnectionManager(self.dsn)
+                cm = self.connection_manager_factory(self.dsn)
                 fc[oid] = cm
+                self._v_temp_cm = None
 
         return cm
 
     def drop_and_create(self):
-        conn = psycopg2.connect(self.dsn)
-        cursor = conn.cursor()
+        cm = self.connection_manager
+        conn = cm.connection
+        cursor = cm.cursor
         try:
             # create the table with 2 columns: the integer docid
             # and a tsvector object.
@@ -81,13 +87,11 @@ class PGTextIndex(Persistent):
 
             conn.commit()
         finally:
-            cursor.close()
-            conn.close()
+            cm.close()
 
     @property
     def read_cursor(self):
-        cm = self.connection_manager
-        return cm.cursor
+        return self.connection_manager.cursor
 
     @property
     def write_cursor(self):
@@ -132,22 +136,38 @@ class PGTextIndex(Persistent):
         # apply the highest weight to the first string,
         # progressively lower weight to successive strings,
         # and the default weight to the last string.
-        for i, text in enumerate(value[:-1]):
-            if text:
-                # PostgreSQL supports 4 weights: A, B, C, and Default.
-                weight = 'ABC'[min(i, 2)]
-                clauses.append('setweight(to_tsvector(%s, %s), %s)')
-                params.extend([self.ts_config, text, weight])
-        clauses.append('to_tsvector(%s, %s)')
-        params.extend([self.ts_config, value[-1]])
+        for i, texts in enumerate(value[:-1]):
+            if texts:
+                if isinstance(texts, basestring):
+                    texts = [texts]
+                for text in texts:
+                    if not text:
+                        continue
+                    # PostgreSQL supports 4 weights: A, B, C, and Default.
+                    weight = 'ABC'[min(i, 2)]
+                    clauses.append('setweight(to_tsvector(%s, %s), %s)')
+                    params.extend([self.ts_config, text, weight])
 
-        clause = ' || '.join(clauses)
-        stmt = """
-        LOCK %(table)s IN EXCLUSIVE MODE;
-        INSERT INTO %(table)s (docid, text_vector)
-        VALUES (%%s, %(clause)s)
-        """ % {'table': self.table, 'clause': clause}
-        self.write_cursor.execute(stmt, tuple(params))
+        texts = value[-1]
+        if isinstance(texts, basestring):
+            texts = [texts]
+        for text in texts:
+            if not text:
+                continue
+            clauses.append('to_tsvector(%s, %s)')
+            params.extend([self.ts_config, text])
+
+        if len(params) > 1:
+            clause = ' || '.join(clauses)
+            stmt = """
+            LOCK %(table)s IN EXCLUSIVE MODE;
+            INSERT INTO %(table)s (docid, text_vector)
+            VALUES (%%s, %(clause)s)
+            """ % {'table': self.table, 'clause': clause}
+            self.write_cursor.execute(stmt, tuple(params))
+        # else there is nothing to add to the database.
+
+    reindex_doc = index_doc
 
     def unindex_doc(self, docid):
         """Remove a document from the index.
@@ -174,12 +194,6 @@ class PGTextIndex(Persistent):
         DELETE FROM %(table)s
         """ % self._subs
         self.write_cursor.execute(stmt)
-
-    def reindex_doc(self, docid, obj):
-        """ Reindex the document numbered ``docid`` using in the
-        information on object ``obj``"""
-        self.unindex_doc(docid)
-        self.index_doc(docid, obj)
 
     def apply(self, query):
         """Apply an index to the given query

@@ -4,9 +4,9 @@ from zope.interface import implements
 import psycopg2.extensions
 import transaction
 
-try:
+try:  # pragma: no cover
     from hashlib import md5
-except ImportError:
+except ImportError:  # pragma: no cover
     from md5 import new as md5
 
 # disconnected_exceptions contains the exception types that might be
@@ -17,17 +17,21 @@ disconnected_exceptions = (psycopg2.OperationalError, psycopg2.InterfaceError)
 class PostgresConnectionManager(object):
     implements(IDataManager)
 
-    def __init__(self, dsn):
+    def __init__(self, dsn, transaction_manager=transaction.manager,
+            module=psycopg2):
         self.dsn = dsn
+        self.transaction_manager = transaction_manager
+        self.module = module
         self._connection = None
         self._cursor = None
         self._sort_key = md5(self.dsn).hexdigest()
+        self._joined = False
 
     @property
     def connection(self):
         c = self._connection
         if c is None:
-            c = psycopg2.connect(self.dsn)
+            c = self.module.connect(self.dsn)
             c.set_isolation_level(
                 psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
             self._connection = c
@@ -43,8 +47,16 @@ class PostgresConnectionManager(object):
 
     def set_changed(self):
         if not self._joined:
-            transaction.get().join(self)
+            self.transaction_manager.get().join(self)
             self._joined = True
+
+    def close(self):
+        if self._cursor is not None:
+            safe_close(self._cursor)
+            self._cursor = None
+        if self._connection is not None:
+            safe_close(self._connection)
+            self._connection = None
 
     def abort(self, transaction):
         try:
@@ -53,7 +65,7 @@ class PostgresConnectionManager(object):
                 try:
                     c.rollback()
                 except:
-                    self._connection = None
+                    self.close()
                     raise
         finally:
             self._joined = False
