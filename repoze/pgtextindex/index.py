@@ -21,7 +21,6 @@ class PGTextIndex(Persistent):
             discriminator,
             dsn,
             table='pgtextindex',
-            database_name='pgtextindex',
             ts_config='english',
             connection_manager_factory=None,
             drop_and_create=True
@@ -35,7 +34,6 @@ class PGTextIndex(Persistent):
         self.dsn = dsn
         self.table = table
         self._subs = dict(table=table)  # map of query string substitutions
-        self.database_name = database_name
         self.ts_config = ts_config
         if connection_manager_factory is not None:
             self.connection_manager_factory = connection_manager_factory
@@ -124,7 +122,7 @@ class PGTextIndex(Persistent):
                              value)
 
         clauses = []
-        params = [docid]
+        params = [docid, docid]
         if isinstance(value, basestring):
             value = [value]
         elif not value:
@@ -154,10 +152,11 @@ class PGTextIndex(Persistent):
             clauses.append('to_tsvector(%s, %s)')
             params.extend([self.ts_config, text])
 
-        if len(params) > 1:
+        if len(params) > 2:
             clause = ' || '.join(clauses)
             stmt = """
             LOCK %(table)s IN EXCLUSIVE MODE;
+            DELETE FROM %(table)s WHERE docid = %%s;
             INSERT INTO %(table)s (docid, text_vector)
             VALUES (%%s, %(clause)s)
             """ % {'table': self.table, 'clause': clause}
