@@ -1,26 +1,31 @@
 
 from persistent import Persistent
 from repoze.catalog.interfaces import ICatalogIndex
+from repoze.pgtextindex.db import PostgresConnectionManager
 from repoze.pgtextindex.queryconvert import convert_query
-from repoze.pgtextindex.db import get_connection_manager
 from zope.index.interfaces import IIndexSort
 from zope.interface import implements
 import BTrees
-import psycopg2
 
 _marker = object()
+
 
 class PGTextIndex(Persistent):
     implements(ICatalogIndex, IIndexSort)
 
     family = BTrees.family32
+    connection_manager_factory = PostgresConnectionManager
+    _v_temp_cm = None  # A PostgresConnectionManager used during initialization
 
     def __init__(self,
             discriminator,
             dsn,
             table='pgtextindex',
-            database_name='pgtextindex',
-            ts_config='english'):
+            ts_config='english',
+            connection_manager_factory=None,
+            drop_and_create=True
+        ):
+
         if not callable(discriminator):
             if not isinstance(discriminator, basestring):
                 raise ValueError('discriminator value must be callable or a '
@@ -29,16 +34,42 @@ class PGTextIndex(Persistent):
         self.dsn = dsn
         self.table = table
         self._subs = dict(table=table)  # map of query string substitutions
-        self.database_name = database_name
         self.ts_config = ts_config
-        self.drop_and_create()
+        if connection_manager_factory is not None:
+            self.connection_manager_factory = connection_manager_factory
+        if drop_and_create:
+            self.drop_and_create()
+
+    @property
+    def connection_manager(self):
+        jar = self._p_jar
+        oid = self._p_oid
+
+        if jar is None or oid is None:
+            # Not yet stored in ZODB, so use _v_temp_cm
+            cm = self._v_temp_cm
+            if cm is None or cm.dsn != self.dsn:
+                cm = self.connection_manager_factory(self.dsn)
+                self._v_temp_cm = cm
+
+        else:
+            fc = getattr(jar, 'foreign_connections', None)
+            if fc is None:
+                jar.foreign_connections = fc = {}
+
+            cm = fc.get(oid)
+            if cm is None or cm.dsn != self.dsn:
+                cm = self.connection_manager_factory(self.dsn)
+                fc[oid] = cm
+                self._v_temp_cm = None
+
+        return cm
 
     def drop_and_create(self):
-        conn = psycopg2.connect(self.dsn)
-        cursor = conn.cursor()
+        cm = self.connection_manager
+        conn = cm.connection
+        cursor = cm.cursor
         try:
-            # TODO: use a separate lock table?
-
             # create the table with 2 columns: the integer docid
             # and a tsvector object.
             stmt = """
@@ -57,19 +88,11 @@ class PGTextIndex(Persistent):
 
             conn.commit()
         finally:
-            cursor.close()
-            conn.close()
+            cm.close()
 
     @property
-    def read_cursor(self):
-        m = get_connection_manager(self._p_jar, self.dsn, self.database_name)
-        return m.cursor
-
-    @property
-    def write_cursor(self):
-        m = get_connection_manager(self._p_jar, self.dsn, self.database_name)
-        m.set_changed()
-        return m.cursor
+    def cursor(self):
+        return self.connection_manager.cursor
 
     def index_doc(self, docid, obj):
         """Add a document to the index.
@@ -99,7 +122,7 @@ class PGTextIndex(Persistent):
                              value)
 
         clauses = []
-        params = [docid]
+        params = [docid, docid]
         if isinstance(value, basestring):
             value = [value]
         elif not value:
@@ -108,22 +131,39 @@ class PGTextIndex(Persistent):
         # apply the highest weight to the first string,
         # progressively lower weight to successive strings,
         # and the default weight to the last string.
-        for i, text in enumerate(value[:-1]):
-            if text:
-                # PostgreSQL supports 4 weights: A, B, C, and Default.
-                weight = 'ABC'[min(i, 2)]
-                clauses.append('setweight(to_tsvector(%s, %s), %s)')
-                params.extend([self.ts_config, text, weight])
-        clauses.append('to_tsvector(%s, %s)')
-        params.extend([self.ts_config, value[-1]])
+        for i, texts in enumerate(value[:-1]):
+            if texts:
+                if isinstance(texts, basestring):
+                    texts = [texts]
+                for text in texts:
+                    if not text:
+                        continue
+                    # PostgreSQL supports 4 weights: A, B, C, and Default.
+                    weight = 'ABC'[min(i, 2)]
+                    clauses.append('setweight(to_tsvector(%s, %s), %s)')
+                    params.extend([self.ts_config, text, weight])
 
-        clause = ' || '.join(clauses)
-        stmt = """
-        LOCK %(table)s IN EXCLUSIVE MODE;
-        INSERT INTO %(table)s (docid, text_vector)
-        VALUES (%%s, %(clause)s)
-        """ % {'table': self.table, 'clause': clause}
-        self.write_cursor.execute(stmt, tuple(params))
+        texts = value[-1]
+        if isinstance(texts, basestring):
+            texts = [texts]
+        for text in texts:
+            if not text:
+                continue
+            clauses.append('to_tsvector(%s, %s)')
+            params.extend([self.ts_config, text])
+
+        if len(params) > 2:
+            clause = ' || '.join(clauses)
+            stmt = """
+            LOCK %(table)s IN EXCLUSIVE MODE;
+            DELETE FROM %(table)s WHERE docid = %%s;
+            INSERT INTO %(table)s (docid, text_vector)
+            VALUES (%%s, %(clause)s)
+            """ % {'table': self.table, 'clause': clause}
+            self.cursor.execute(stmt, tuple(params))
+        # else there is nothing to add to the database.
+
+    reindex_doc = index_doc
 
     def unindex_doc(self, docid):
         """Remove a document from the index.
@@ -140,7 +180,7 @@ class PGTextIndex(Persistent):
         DELETE FROM %(table)s
         WHERE docid = %%s
         """ % self._subs
-        self.write_cursor.execute(stmt, (docid,))
+        self.cursor.execute(stmt, (docid,))
 
     def clear(self):
         """Unindex all documents indexed by the index
@@ -149,13 +189,7 @@ class PGTextIndex(Persistent):
         LOCK %(table)s IN EXCLUSIVE MODE;
         DELETE FROM %(table)s
         """ % self._subs
-        self.write_cursor.execute(stmt)
-
-    def reindex_doc(self, docid, obj):
-        """ Reindex the document numbered ``docid`` using in the
-        information on object ``obj``"""
-        self.unindex_doc(docid)
-        self.index_doc(docid, obj)
+        self.cursor.execute(stmt)
 
     def apply(self, query):
         """Apply an index to the given query
@@ -182,7 +216,7 @@ class PGTextIndex(Persistent):
         WHERE text_vector @@ query
         ORDER BY rank DESC
         """ % self.table
-        cursor = self.read_cursor
+        cursor = self.cursor
         cursor.execute(stmt, (self.ts_config, s))
         data = list(cursor)
         res = self.family.IF.Bucket()
@@ -206,7 +240,7 @@ class PGTextIndex(Persistent):
             AND docid IN (%s)
         ORDER BY rank DESC
         """ % (self.table, docidstr)
-        cursor = self.read_cursor
+        cursor = self.cursor
         cursor.execute(stmt, (self.ts_config, s))
         data = list(cursor)
         res = self.family.IF.Bucket()
@@ -242,4 +276,3 @@ class PGTextIndex(Persistent):
         if limit:
             result = result[:limit]
         return result
-

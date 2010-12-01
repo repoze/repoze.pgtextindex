@@ -15,7 +15,7 @@ include:
     - Performance. For large datasets, ``repoze.pgtextindex`` can be
       orders of magnitude faster than ``zope.index``, mainly because
       ``repoze.pgtextindex`` does not have the overhead of unpickling
-      objects that ``zope.index`` does.
+      objects that ``zope.index`` has.
 
     - Lower RAM consumption. Users of ``zope.index`` work around the
       unpickling overhead by keeping large caches of unpickled objects

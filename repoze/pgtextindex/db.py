@@ -1,113 +1,84 @@
 
 from transaction.interfaces import IDataManager
-from ZODB.POSException import ConnectionStateError
 from zope.interface import implements
-import psycopg2
 import psycopg2.extensions
 import transaction
+
+try:  # pragma: no cover
+    from hashlib import md5
+except ImportError:  # pragma: no cover
+    from md5 import new as md5
 
 # disconnected_exceptions contains the exception types that might be
 # raised when the connection to the database has been broken.
 disconnected_exceptions = (psycopg2.OperationalError, psycopg2.InterfaceError)
 
 
-class PGDatabaseConnector(object):
-    """A PostgreSQL database connector that can fit in a ZODB database map.
-
-    Provides the important methods and attributes of ZODB.DB.DB.
-    """
-
-    def __init__(self, dsn,
-            database_name='pgtextindex-db',
-            lock_table='write_lock',
-            databases=None):
-        self.dsn = dsn
-        self.database_name = database_name
-
-        if databases is None:
-            databases = {}
-        self.databases = databases
-        self.database_name = database_name
-        if database_name in databases:
-            raise ValueError("database_name %r already in databases" %
-                             database_name)
-        databases[database_name] = self
-
-    def open(self, version=None, before=None, transaction_manager=None):
-        if version:
-            raise ValueError("Versions are not supported by this database.")
-        if before:
-            raise ValueError("I don't know what to do with 'before' argument.")
-        m = PGConnectionManager(self, self.database_name)
-        m.open(transaction_manager)
-        return m
-
-    def open_pg(self):
-        # should we pool connections here?
-        conn = psycopg2.connect(self.dsn)
-        conn.set_isolation_level(
-            psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
-        cursor = conn.cursor()
-        return conn, cursor
-
-    def close_pg(self, conn, cursor):
-        # should we pool connections here?
-        safe_close(cursor)
-        safe_close(conn)
-
-    def _connectionMap(self, func):
-        pass
-
-
-class PGConnectionManager(object):
-    """A data manager for a PostgreSQL database connection.
-
-    Provides the important methods of ZODB.Connection.Connection.
-    """
+class PostgresConnectionManager(object):
     implements(IDataManager)
 
-    def __init__(self, db, database_name):
-        self._db = db
-        self.connections = {database_name: self}
-        self.transaction_manager = None
-        self._conn = None
+    def __init__(self, dsn, transaction_manager=transaction.manager,
+            module=psycopg2):
+        self.dsn = dsn
+        self.transaction_manager = transaction_manager
+        self.module = module
+        self._connection = None
         self._cursor = None
+        self._sort_key = md5(self.dsn).hexdigest()
         self._joined = False
 
     @property
-    def cursor(self):
-        if self._conn is None:
-            conn, cursor = self._db.open_pg()
-            self._conn = conn
-            self._cursor = cursor
-        return self._cursor
+    def connection(self):
+        c = self._connection
+        if c is None:
+            c = self.module.connect(self.dsn)
+            c.set_isolation_level(
+                psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
+            self._connection = c
+        return c
 
     @property
-    def connection(self):
-        self.cursor
-        return self._conn
+    def cursor(self):
+        u = self._cursor
+        if u is None:
+            u = self.connection.cursor()
+            self._cursor = u
 
-    def set_changed(self):
         if not self._joined:
             self.transaction_manager.get().join(self)
             self._joined = True
+            # Bring the connection up to date.
+            try:
+                self.connection.rollback()
+                u.execute('SELECT 1')
+                u.fetchall()
+            except disconnected_exceptions:
+                # Try to reopen.
+                self.close()
+                u = self.connection.cursor()
+                self._cursor = u
 
-    def open(self, transaction_manager=None, delegate=None):
-        if transaction_manager is None:
-            transaction_manager = transaction.manager
-        self.transaction_manager = transaction_manager
+        return u
 
-    def close(self, primary=None):
-        if self._joined:
-            raise ConnectionStateError("Cannot close a connection joined to "
-                                       "a transaction")
-        if self._conn is not None:
-            self._db.close_pg(self._conn, self._cursor)
+    def close(self):
+        if self._cursor is not None:
+            safe_close(self._cursor)
             self._cursor = None
-            self._conn = None
+        if self._connection is not None:
+            safe_close(self._connection)
+            self._connection = None
 
     def abort(self, transaction):
-        pass
+        try:
+            c = self._connection
+            if c is not None:
+                try:
+                    c.rollback()
+                except:
+                    self.close()
+                    raise
+        finally:
+            self._joined = False
 
     def tpc_begin(self, transaction):
         pass
@@ -116,20 +87,44 @@ class PGConnectionManager(object):
         pass
 
     def tpc_vote(self, transaction):
-        pass
+        # ensure connection is open
+        self.connection
 
     def tpc_finish(self, transaction):
-        if self._conn is not None:
-            self._conn.commit()
-        self._joined = False
+        try:
+            c = self._connection
+            if c is not None:
+                try:
+                    c.commit()
+                except:
+                    try:
+                        c.rollback()
+                    except (KeyboardInterrupt, SystemExit):  # pragma: no cover
+                        raise
+                    except:
+                        self.close()
+                    raise
+        finally:
+            self._joined = False
 
     def tpc_abort(self, transaction):
-        if self._conn is not None:
-            self._conn.rollback()
-        self._joined = False
+        pass
 
     def sortKey(self):
-        return self._db.database_name
+        # The DSN might contain a password, so don't expose it.
+        return self._sort_key
+
+    def savepoint(self, optimistic=False):
+        return NoRollbackSavepoint(self)
+
+
+class NoRollbackSavepoint:
+
+    def __init__(self, datamanager):
+        self.datamanager = datamanager
+
+    def rollback(self):
+        pass
 
 
 def safe_close(obj):
@@ -138,11 +133,3 @@ def safe_close(obj):
             obj.close()
         except disconnected_exceptions:
             pass
-
-
-def get_connection_manager(zodb_conn, dsn, database_name):
-    if database_name not in zodb_conn.db().databases:
-        # install into the database map
-        db = PGDatabaseConnector(dsn, database_name)
-        zodb_conn.db().databases[database_name] = db
-    return zodb_conn.get_connection(database_name)
