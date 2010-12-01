@@ -14,6 +14,46 @@ class TestPostgresConnectionManager(unittest.TestCase):
         return PostgresConnectionManager
 
     def _make_one(self, dsn="dbname=dummy"):
+
+        class DummyPsycopg2Module:
+            def connect(self, dsn):
+                return DummyPsycopg2Connection(dsn)
+
+        class DummyPsycopg2Connection:
+            def __init__(self, dsn):
+                self.dsn = dsn
+                self.commits = 0
+                self.rollbacks = 0
+
+            def set_isolation_level(self, level):
+                self.isolation_level = level
+
+            def cursor(self):
+                return DummyPsycopg2Cursor(self)
+
+            def close(self):
+                self._closed = True
+
+            def commit(self):
+                self.commits += 1
+
+            def rollback(self):
+                self.rollbacks += 1
+
+        class DummyPsycopg2Cursor:
+            def __init__(self, connection):
+                self.connection = connection
+                self.executed = []
+
+            def execute(self, stmt):
+                self.executed.append(stmt)
+
+            def fetchall(self):
+                return []
+
+            def close(self):
+                self._closed = True
+
         return self._get_class()(dsn, module=DummyPsycopg2Module())
 
     def test_class_conforms_to_IDataManager(self):
@@ -35,10 +75,10 @@ class TestPostgresConnectionManager(unittest.TestCase):
         cm = self._make_one()
         self.assertEqual(cm.cursor.connection.dsn, "dbname=dummy")
 
-    def test_set_changed(self):
+    def test_join_when_getting_cursor(self):
         cm = self._make_one()
         self.assertFalse(cm._joined)
-        cm.set_changed()
+        cm.cursor
         self.assertTrue(cm._joined)
 
     def test_close_not_open(self):
@@ -56,32 +96,49 @@ class TestPostgresConnectionManager(unittest.TestCase):
         self.assertTrue(conn._closed)
         self.assertTrue(cursor._closed)
 
+    def test_reopen_after_postgres_goes_away(self):
+        cm = self._make_one()
+        cursor = cm.cursor
+        self.assertNotEqual(cursor, None)
+        import transaction
+        transaction.commit()
+
+        def simulate_disconnected(stmt):
+            from psycopg2 import OperationalError
+            raise OperationalError("synthetic disconnect")
+
+        cursor.execute = simulate_disconnected
+        cursor2 = cm.cursor
+        self.assertNotEqual(cursor2, None)
+        self.assertNotEqual(cursor2, cursor)
+
     def test_abort_success(self):
         cm = self._make_one()
         conn = cm.connection
-        cm.set_changed()
-        self.assertEqual(conn.rollbacks, 0)
+        cm.cursor
+        self.assertEqual(conn.rollbacks, 1)
         import transaction
         transaction.abort()
-        self.assertEqual(conn.rollbacks, 1)
+        self.assertEqual(conn.rollbacks, 2)
 
     def test_abort_fail(self):
         cm = self._make_one()
         conn = cm.connection
+        cm.cursor
+        self.assertEqual(conn.rollbacks, 1)
 
         def faulty_rollback():
             raise ValueError()
 
         conn.rollback = faulty_rollback
-        cm.set_changed()
-        self.assertEqual(conn.rollbacks, 0)
         import transaction
         self.assertRaises(ValueError, transaction.abort)
+        self.assertEqual(conn.rollbacks, 1)
 
     def test_commit_success(self):
         cm = self._make_one()
         conn = cm.connection
-        cm.set_changed()
+        cm.cursor
         self.assertEqual(conn.commits, 0)
         import transaction
         transaction.commit()
@@ -90,15 +147,36 @@ class TestPostgresConnectionManager(unittest.TestCase):
     def test_commit_fail(self):
         cm = self._make_one()
         conn = cm.connection
-        cm.set_changed()
+        cm.cursor
+        self.assertEqual(conn.rollbacks, 1)
 
         def faulty_commit():
             raise ValueError()
 
         conn.commit = faulty_commit
-        self.assertEqual(conn.commits, 0)
         import transaction
         self.assertRaises(ValueError, transaction.commit)
+        self.assertEqual(conn.commits, 0)
+        self.assertEqual(conn.rollbacks, 2)
+
+    def test_commit_and_rollback_fail_generic(self):
+        cm = self._make_one()
+        conn = cm.connection
+        cm.cursor
+        self.assertEqual(conn.rollbacks, 1)
+
+        def faulty_commit():
+            raise ValueError()
+
+        def faulty_rollback():
+            raise ValueError()
+
+        conn.commit = faulty_commit
+        conn.rollback = faulty_rollback
+        import transaction
+        self.assertRaises(ValueError, transaction.commit)
+        self.assertEqual(conn.commits, 0)
+        self.assertEqual(conn.rollbacks, 1)
 
     def test_sortKey(self):
         cm = self._make_one()
@@ -156,41 +234,6 @@ class TestSafeClose(unittest.TestCase):
 
         obj = DummyCloseable()
         self.assertRaises(ValueError, self._call, obj)
-
-
-class DummyPsycopg2Module:
-    def connect(self, dsn):
-        return DummyPsycopg2Connection(dsn)
-
-
-class DummyPsycopg2Connection:
-    def __init__(self, dsn):
-        self.dsn = dsn
-        self.commits = 0
-        self.rollbacks = 0
-
-    def set_isolation_level(self, level):
-        self.isolation_level = level
-
-    def cursor(self):
-        return DummyPsycopg2Cursor(self)
-
-    def close(self):
-        self._closed = True
-
-    def commit(self):
-        self.commits += 1
-
-    def rollback(self):
-        self.rollbacks += 1
-
-
-class DummyPsycopg2Cursor:
-    def __init__(self, connection):
-        self.connection = connection
-
-    def close(self):
-        self._closed = True
 
 
 def test_suite():

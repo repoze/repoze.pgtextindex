@@ -23,7 +23,9 @@ class PGTextIndex(Persistent):
             table='pgtextindex',
             database_name='pgtextindex',
             ts_config='english',
-            connection_manager_factory=None):
+            connection_manager_factory=None,
+            drop_and_create=True
+        ):
 
         if not callable(discriminator):
             if not isinstance(discriminator, basestring):
@@ -37,7 +39,8 @@ class PGTextIndex(Persistent):
         self.ts_config = ts_config
         if connection_manager_factory is not None:
             self.connection_manager_factory = connection_manager_factory
-        self.drop_and_create()
+        if drop_and_create:
+            self.drop_and_create()
 
     @property
     def connection_manager(self):
@@ -90,14 +93,8 @@ class PGTextIndex(Persistent):
             cm.close()
 
     @property
-    def read_cursor(self):
+    def cursor(self):
         return self.connection_manager.cursor
-
-    @property
-    def write_cursor(self):
-        cm = self.connection_manager
-        cm.set_changed()
-        return cm.cursor
 
     def index_doc(self, docid, obj):
         """Add a document to the index.
@@ -164,7 +161,7 @@ class PGTextIndex(Persistent):
             INSERT INTO %(table)s (docid, text_vector)
             VALUES (%%s, %(clause)s)
             """ % {'table': self.table, 'clause': clause}
-            self.write_cursor.execute(stmt, tuple(params))
+            self.cursor.execute(stmt, tuple(params))
         # else there is nothing to add to the database.
 
     reindex_doc = index_doc
@@ -184,7 +181,7 @@ class PGTextIndex(Persistent):
         DELETE FROM %(table)s
         WHERE docid = %%s
         """ % self._subs
-        self.write_cursor.execute(stmt, (docid,))
+        self.cursor.execute(stmt, (docid,))
 
     def clear(self):
         """Unindex all documents indexed by the index
@@ -193,7 +190,7 @@ class PGTextIndex(Persistent):
         LOCK %(table)s IN EXCLUSIVE MODE;
         DELETE FROM %(table)s
         """ % self._subs
-        self.write_cursor.execute(stmt)
+        self.cursor.execute(stmt)
 
     def apply(self, query):
         """Apply an index to the given query
@@ -220,7 +217,7 @@ class PGTextIndex(Persistent):
         WHERE text_vector @@ query
         ORDER BY rank DESC
         """ % self.table
-        cursor = self.read_cursor
+        cursor = self.cursor
         cursor.execute(stmt, (self.ts_config, s))
         data = list(cursor)
         res = self.family.IF.Bucket()
@@ -244,7 +241,7 @@ class PGTextIndex(Persistent):
             AND docid IN (%s)
         ORDER BY rank DESC
         """ % (self.table, docidstr)
-        cursor = self.read_cursor
+        cursor = self.cursor
         cursor.execute(stmt, (self.ts_config, s))
         data = list(cursor)
         res = self.family.IF.Bucket()

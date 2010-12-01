@@ -43,12 +43,22 @@ class PostgresConnectionManager(object):
         if u is None:
             u = self.connection.cursor()
             self._cursor = u
-        return u
 
-    def set_changed(self):
         if not self._joined:
             self.transaction_manager.get().join(self)
             self._joined = True
+            # Bring the connection up to date.
+            try:
+                self.connection.rollback()
+                u.execute('SELECT 1')
+                u.fetchall()
+            except disconnected_exceptions:
+                # Try to reopen.
+                self.close()
+                u = self.connection.cursor()
+                self._cursor = u
+
+        return u
 
     def close(self):
         if self._cursor is not None:
@@ -87,7 +97,12 @@ class PostgresConnectionManager(object):
                 try:
                     c.commit()
                 except:
-                    c.rollback()
+                    try:
+                        c.rollback()
+                    except (KeyboardInterrupt, SystemExit):  # pragma: no cover
+                        raise
+                    except:
+                        self.close()
                     raise
         finally:
             self._joined = False

@@ -53,17 +53,10 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertTrue(index.connection_manager is not None)
         self.assertFalse(index._v_temp_cm)
 
-    def test_read_cursor(self):
+    def test_cursor_property(self):
         index = self._make_one()
-        cursor = index.read_cursor
+        cursor = index.cursor
         self.assertTrue(hasattr(cursor, 'execute'))
-        self.assertFalse(index.connection_manager.changed)
-
-    def test_write_cursor(self):
-        index = self._make_one()
-        cursor = index.write_cursor
-        self.assertTrue(hasattr(cursor, 'execute'))
-        self.assertTrue(index.connection_manager.changed)
 
     def _format_executed(self, executed):
         self.assertEqual(len(executed), 1)
@@ -74,25 +67,25 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_none(self):
         index = self._make_one()
-        index.write_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         index.index_doc(6, None)
         self.assertEqual(len(executed), 0)
 
     def test_index_doc_empty_string(self):
         index = self._make_one()
-        index.write_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         index.index_doc(6, '')
         self.assertEqual(len(executed), 0)
 
     def test_index_doc_empty_strings_weighted(self):
         index = self._make_one()
-        index.write_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         index.index_doc(6, [['', ''], ''])
         self.assertEqual(len(executed), 0)
 
     def test_index_doc_unweighted(self):
         index = self._make_one()
-        index.write_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         index.index_doc(5, 'Waldo')
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
@@ -107,7 +100,7 @@ class TestPGTextIndex(unittest.TestCase):
             name = 'Osvaldo'
 
         index = self._make_one('name')
-        index.write_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         index.index_doc(6, DummyObject())
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
@@ -122,7 +115,7 @@ class TestPGTextIndex(unittest.TestCase):
             return default
 
         index = self._make_one(discriminator)
-        index.write_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         index.index_doc(6, 'dummy')
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
@@ -144,7 +137,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_use_one_weight(self):
         index = self._make_one()
-        index.write_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         index.index_doc(5, ['Waldo', 'character'])
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
@@ -160,7 +153,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_use_more_than_all_possible_weights(self):
         index = self._make_one()
-        index.write_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         index.index_doc(5, ['Waldo', 'character', 'boy', 'person', 'entity'])
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
@@ -182,7 +175,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_skip_weights(self):
         index = self._make_one()
-        index.write_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         index.index_doc(5, ['Waldo', '', 'boy', ''])
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
@@ -198,7 +191,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_multiple_texts_with_the_same_weight(self):
         index = self._make_one()
-        index.write_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         index.index_doc(5, [['Waldo', 'Wally'], ''])
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
@@ -214,7 +207,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_unindex_doc(self):
         index = self._make_one()
-        index.write_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         index.unindex_doc(7)
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
@@ -226,7 +219,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_clear(self):
         index = self._make_one()
-        index.write_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         index.clear()
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
@@ -237,7 +230,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_apply_success(self):
         index = self._make_one()
-        index.read_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         res = index.apply('Waldo Wally')
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
@@ -253,7 +246,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_apply_intersect_no_docids(self):
         index = self._make_one()
-        index.read_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         res = index.apply_intersect('Waldo', [])
         self.assertTrue(isinstance(res, index.family.IF.Bucket))
         self.assertEqual(len(res), 0)
@@ -261,7 +254,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_apply_intersect_with_docids(self):
         index = self._make_one()
-        index.read_cursor.executed = executed = []
+        index.cursor.executed = executed = []
         res = index.apply_intersect('Waldo', [8,6,7])
         self.assertTrue(isinstance(res, index.family.IF.Bucket))
         self.assertEqual(len(res), 2)
@@ -320,10 +313,6 @@ class DummyConnectionManager:
         self.dsn = dsn
         self.connection = DummyConnection()
         self.cursor = DummyCursor()
-        self.changed = False
-
-    def set_changed(self):
-        self.changed = True
 
     def close(self):
         self.closed = True
