@@ -53,6 +53,22 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertTrue(index.connection_manager is not None)
         self.assertFalse(index._v_temp_cm)
 
+    def test_jar_can_close_connection_manager(self):
+        class DummyZODBConnection:
+            released = False
+            def _release_resources(self):
+                self.released = True
+
+        index = self._make_one()
+        index._p_jar = jar = DummyZODBConnection()
+        index._p_oid = '1' * 8
+        cm = index.connection_manager
+        self.assertFalse(cm.closed)
+        self.assertFalse(jar.released)
+        index._p_jar._release_resources()
+        self.assertTrue(cm.closed)
+        self.assertTrue(jar.released)
+
     def test_cursor_property(self):
         index = self._make_one()
         cursor = index.cursor
@@ -314,6 +330,7 @@ class TestPGTextIndex(unittest.TestCase):
 
 
 class DummyConnectionManager:
+    closed = False
 
     def __init__(self, dsn):
         self.dsn = dsn

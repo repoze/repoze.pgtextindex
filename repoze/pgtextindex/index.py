@@ -7,7 +7,10 @@ from zope.index.interfaces import IIndexSort
 from zope.interface import implements
 import BTrees
 
+import logging
+
 _marker = object()
+log = logging.getLogger(__name__)
 
 
 class PGTextIndex(Persistent):
@@ -56,6 +59,7 @@ class PGTextIndex(Persistent):
             fc = getattr(jar, 'foreign_connections', None)
             if fc is None:
                 jar.foreign_connections = fc = {}
+                _mp_release_resources(jar)
 
             cm = fc.get(oid)
             if cm is None or cm.dsn != self.dsn:
@@ -276,3 +280,30 @@ class PGTextIndex(Persistent):
         if limit:
             result = result[:limit]
         return result
+
+
+def _mp_release_resources(jar):
+    """
+    Monkey patch ZODB.DB.Connection._release_resources() in order to cause our
+    Postgres connections to get closed whenever the ZODB connection we've
+    piggy backed on top of is evicted from the connection pool.  This is only
+    known to work with ZODB 3.10.X.
+    """
+    wrapped = getattr(jar, '_release_resources', None)
+    if wrapped is None:
+        log.warn(
+            "Unable to close Postgres connections when ZODB garbage collects "
+            "a connection from it's pool. This is only known to work with "
+            "ZODB 3.10.X. In practice, the ZODB tends to rarely garbage "
+            "collect a connection, keeping a handful of connections open for "
+            "the life of the process, so this may not be problematic.")
+        return
+
+    def _release_resources():
+        wrapped()
+        for fc in jar.foreign_connections.values():
+            close = getattr(fc, 'close', None)
+            if close is not None:
+                close()
+        del jar.foreign_connections
+    jar._release_resources = _release_resources
