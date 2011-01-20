@@ -24,11 +24,12 @@ setup(
     long_description=README + '\n\n' +  CHANGES,
     # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
         "Programming Language :: Python",
-        "Topic :: Internet :: WWW/HTTP",
-        "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+        "Framework :: ZODB",
+        "License :: Repoze Public License",
+        "Topic :: Database",
     ],
     keywords='repoze catalog ZODB PostgreSQL text index',
     author='Shane Hathaway',
