@@ -1,7 +1,7 @@
 Unreleased
 ==========
 
-- ...
+- Added the 'get_contextual_summary' method to the index.
 
 0.1 (2011-01-20)
 ================

@@ -290,6 +290,16 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params, ('english', "'Waldo'"))
 
+    def test_get_contextual_summary(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+        index.get_contextual_summary('raw text', 'query', foo='bar')
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'SELECT ts_headline(%s, %s, to_tsquery(%s, %s), %s)'])
+        self.assertEqual(params, ('english', 'raw text', 'english', "'query'",
+                                  'foo=bar'))
+
     def test_sort_nothing(self):
         index = self._make_one()
         self.assertEqual(index.sort({}), {})
@@ -363,3 +373,6 @@ class DummyCursor:
     def __iter__(self):
         """Return an iterable of (docid, score) tuples"""
         return iter([(5, 1.3), (6, 0.7)])
+
+    def fetchone(self):
+        return ['one']

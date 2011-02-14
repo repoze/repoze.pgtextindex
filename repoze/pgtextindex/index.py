@@ -227,6 +227,23 @@ class PGTextIndex(Persistent):
         res.update(data)
         return res
 
+    def get_contextual_summary(self, raw_text, query, **options):
+        """Given the raw text of a document and a query, returns a snippet of
+        text with the words in the query highlighted using html. Calls the
+        PostgreSQL function, 'ts_headline'. Options are turned into an options
+        string passed to 'ts_headline'. See the documentation for PostgreSQL
+        for more information on the options that can be passed to
+        'ts_headline'."""
+        s = convert_query(query)
+        options = ','.join(['%s=%s' % (k, v) for k, v in options.items()])
+        stmt = """
+        SELECT ts_headline(%s, %s, to_tsquery(%s, %s), %s)
+        """
+        cursor = self.cursor
+        cursor.execute(stmt, (self.ts_config, raw_text, self.ts_config,
+                              s, options))
+        return cursor.fetchone()[0]
+
     def apply_intersect(self, query, docids):
         """ Run the query implied by query, and return query results
         intersected with the ``docids`` set that is supplied.  If
