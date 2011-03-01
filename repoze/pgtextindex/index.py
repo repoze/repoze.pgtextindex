@@ -98,6 +98,10 @@ class PGTextIndex(Persistent):
     def cursor(self):
         return self.connection_manager.cursor
 
+    @property
+    def connection(self):
+        return self.connection_manager.connection
+
     def index_doc(self, docid, obj):
         """Add a document to the index.
 
@@ -242,7 +246,8 @@ class PGTextIndex(Persistent):
         cursor = self.cursor
         cursor.execute(stmt, (self.ts_config, raw_text, self.ts_config,
                               s, options))
-        return cursor.fetchone()[0]
+        summary = cursor.fetchone()[0]
+	return summary.decode(self.connection.encoding)
 
     def apply_intersect(self, query, docids):
         """ Run the query implied by query, and return query results
