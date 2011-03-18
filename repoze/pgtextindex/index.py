@@ -210,24 +210,7 @@ class PGTextIndex(Persistent):
         """ % self._subs
         self.cursor.execute(stmt)
 
-    def apply(self, query):
-        """Apply an index to the given query
-
-        The type of the query is index specific.
-
-        A result is returned that is:
-
-        - An IFBTree or an IFBucket mapping document ids to floating-point
-          scores for document ids of documents that match the query,
-
-        - An IFSet or IFTreeSet containing document ids of documents
-          that match the query, or
-
-        - None, indicating that the index could not use the query and
-          that the result should have no impact on determining a final
-          result.
-
-        """
+    def applyContains(self, query):
         s = convert_query(query)
         stmt = """
         SELECT docid, ts_rank_cd(text_vector, query) AS rank
@@ -241,6 +224,24 @@ class PGTextIndex(Persistent):
         res = self.family.IF.Bucket()
         res.update(data)
         return res
+
+    def applyDoesNotContain(self, query):
+        s = convert_query(query)
+        stmt = """
+        SELECT docid, ts_rank_cd(text_vector, query) AS rank
+        FROM %s, to_tsquery(%%s, %%s) query
+        WHERE NOT(text_vector @@ query)
+        ORDER BY rank DESC
+        """ % self.table
+        cursor = self.cursor
+        cursor.execute(stmt, (self.ts_config, s))
+        data = list(cursor)
+        res = self.family.IF.Bucket()
+        res.update(data)
+        return res
+
+    apply = applyEq = applyContains
+    applyNotEq = applyDoesNotContain
 
     def docids(self):
         """
@@ -327,6 +328,46 @@ class PGTextIndex(Persistent):
         if limit:
             result = result[:limit]
         return result
+
+    def applyGt(self, *args, **kw):
+        raise NotImplementedError(
+            "Gt is not supported for %s" % type(self).__name__)
+
+    def applyLt(self, *args, **kw):
+        raise NotImplementedError(
+            "Lt is not supported for %s" % type(self).__name__)
+
+    def applyGe(self, *args, **kw):
+        raise NotImplementedError(
+            "Ge is not supported for %s" % type(self).__name__)
+
+    def applyLe(self, *args, **kw):
+        raise NotImplementedError(
+            "Le is not supported for %s" % type(self).__name__)
+
+    def applyAny(self, *args, **kw):
+        raise NotImplementedError(
+            "Any is not supported for %s" % type(self).__name__)
+
+    def applyNotAny(self, *args, **kw):
+        raise NotImplementedError(
+            "NotAny is not supported for %s" % type(self).__name__)
+
+    def applyAll(self, *args, **kw):
+        raise NotImplementedError(
+            "All is not supported for %s" % type(self).__name__)
+
+    def applyNotAll(self, *args, **kw):
+        raise NotImplementedError(
+            "NotAll is not supported for %s" % type(self).__name__)
+
+    def applyInRange(self, *args, **kw):
+        raise NotImplementedError(
+            "InRange is not supported for %s" % type(self).__name__)
+
+    def applyNotInRange(self, *args, **kw):
+        raise NotImplementedError(
+            "NotInRange is not supported for %s" % type(self).__name__)
 
     def _migrate_to_0_8_0(self, docids):
         """

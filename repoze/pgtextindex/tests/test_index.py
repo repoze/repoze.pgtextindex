@@ -272,7 +272,7 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params, None)
 
-    def test_apply_success(self):
+    def test_apply(self):
         index = self._make_one()
         index.cursor.executed = executed = []
         res = index.apply('Waldo Wally')
@@ -281,6 +281,70 @@ class TestPGTextIndex(unittest.TestCase):
             'SELECT docid, ts_rank_cd(text_vector, query) AS rank',
             'FROM pgtextindex, to_tsquery(%s, %s) query',
             'WHERE text_vector @@ query',
+            'ORDER BY rank DESC',
+        ])
+        self.assertEqual(params,
+            ('english', "( 'Waldo' ) & ( 'Wally' )"))
+        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(len(res), 2)
+
+    def test_applyEq(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+        res = index.applyEq('Waldo Wally')
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'SELECT docid, ts_rank_cd(text_vector, query) AS rank',
+            'FROM pgtextindex, to_tsquery(%s, %s) query',
+            'WHERE text_vector @@ query',
+            'ORDER BY rank DESC',
+        ])
+        self.assertEqual(params,
+            ('english', "( 'Waldo' ) & ( 'Wally' )"))
+        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(len(res), 2)
+
+    def test_applyContains(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+        res = index.applyContains('Waldo Wally')
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'SELECT docid, ts_rank_cd(text_vector, query) AS rank',
+            'FROM pgtextindex, to_tsquery(%s, %s) query',
+            'WHERE text_vector @@ query',
+            'ORDER BY rank DESC',
+        ])
+        self.assertEqual(params,
+            ('english', "( 'Waldo' ) & ( 'Wally' )"))
+        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(len(res), 2)
+
+    def test_applyNotEq(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+        res = index.applyNotEq('Waldo Wally')
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'SELECT docid, ts_rank_cd(text_vector, query) AS rank',
+            'FROM pgtextindex, to_tsquery(%s, %s) query',
+            'WHERE NOT(text_vector @@ query)',
+            'ORDER BY rank DESC',
+        ])
+        self.assertEqual(params,
+            ('english', "( 'Waldo' ) & ( 'Wally' )"))
+        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(len(res), 2)
+
+    def test_applyDoesNotContain(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+        res = index.applyDoesNotContain('Waldo Wally')
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'SELECT docid, ts_rank_cd(text_vector, query) AS rank',
+            'FROM pgtextindex, to_tsquery(%s, %s) query',
+            'WHERE NOT(text_vector @@ query)',
             'ORDER BY rank DESC',
         ])
         self.assertEqual(params,
@@ -372,6 +436,20 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         res = index.sort(bucket, limit=2)
         self.assertEqual(res, [8, 9])
+
+    def test_unsupported_operations(self):
+        index = self._make_one()
+        for method in (index.applyGt,
+                       index.applyLt,
+                       index.applyGe,
+                       index.applyLe,
+                       index.applyAll,
+                       index.applyNotAll,
+                       index.applyAny,
+                       index.applyNotAny,
+                       index.applyInRange,
+                       index.applyNotInRange):
+            self.assertRaises(NotImplementedError, method, 'foo')
 
     def test_migrate_to_0_8_0(self):
         index = self._make_one()
