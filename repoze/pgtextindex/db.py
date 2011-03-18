@@ -18,7 +18,7 @@ class PostgresConnectionManager(object):
     implements(IDataManager)
 
     def __init__(self, dsn, transaction_manager=transaction.manager,
-            module=psycopg2):
+                 module=psycopg2):
         self.dsn = dsn
         self.transaction_manager = transaction_manager
         self.module = module

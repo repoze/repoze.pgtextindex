@@ -21,13 +21,13 @@ class PGTextIndex(Persistent):
     _v_temp_cm = None  # A PostgresConnectionManager used during initialization
 
     def __init__(self,
-            discriminator,
-            dsn,
-            table='pgtextindex',
-            ts_config='english',
-            connection_manager_factory=None,
-            drop_and_create=True
-        ):
+                 discriminator,
+                 dsn,
+                 table='pgtextindex',
+                 ts_config='english',
+                 connection_manager_factory=None,
+                 drop_and_create=True
+                 ):
 
         if not callable(discriminator):
             if not isinstance(discriminator, basestring):
@@ -122,7 +122,7 @@ class PGTextIndex(Persistent):
 
         if value is _marker:
             # unindex the previous value
-            self.unindex_doc(docid)
+            self._index_null(docid)
             return None
 
         if isinstance(value, Persistent):
@@ -169,9 +169,20 @@ class PGTextIndex(Persistent):
             VALUES (%%s, %(clause)s)
             """ % {'table': self.table, 'clause': clause}
             self.cursor.execute(stmt, tuple(params))
-        # else there is nothing to add to the database.
+
+        else:
+            self._index_null(docid)
 
     reindex_doc = index_doc
+
+    def _index_null(self, docid):
+        stmt = """
+        LOCK %(table)s IN EXCLUSIVE MODE;
+        DELETE FROM %(table)s WHERE docid = %%s;
+        INSERT INTO %(table)s (docid, text_vector)
+        VALUES (%%s, null)
+        """ % {'table': self.table}
+        self.cursor.execute(stmt, (docid, docid))
 
     def unindex_doc(self, docid):
         """Remove a document from the index.
@@ -231,6 +242,20 @@ class PGTextIndex(Persistent):
         res.update(data)
         return res
 
+    def docids(self):
+        """
+        Return all docids in the index.
+        """
+        stmt = """
+        SELECT docid FROM %s
+        """ % self.table
+        cursor = self.cursor
+        cursor.execute(stmt)
+        res = self.family.IF.Set()
+        for row in cursor:
+            res.add(row[0])
+        return res
+
     def get_contextual_summary(self, raw_text, query, **options):
         """Given the raw text of a document and a query, returns a snippet of
         text with the words in the query highlighted using html. Calls the
@@ -247,7 +272,7 @@ class PGTextIndex(Persistent):
         cursor.execute(stmt, (self.ts_config, raw_text, self.ts_config,
                               s, options))
         summary = cursor.fetchone()[0]
-	return summary.decode(self.connection.encoding)
+        return summary.decode(self.connection.encoding)
 
     def apply_intersect(self, query, docids):
         """ Run the query implied by query, and return query results
@@ -302,6 +327,16 @@ class PGTextIndex(Persistent):
         if limit:
             result = result[:limit]
         return result
+
+    def _migrate_to_0_8_0(self, docids):
+        """
+        Seaver's law: "Persistence means always having to say your sorry."
+
+        Insert null value rows for docs that are in catalog but don't have
+        values for this index.
+        """
+        for docid in self.family.IF.difference(docids, self.docids()):
+            self._index_null(docid)
 
 
 def _mp_release_resources(jar):

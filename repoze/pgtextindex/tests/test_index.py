@@ -85,19 +85,40 @@ class TestPGTextIndex(unittest.TestCase):
         index = self._make_one()
         index.cursor.executed = executed = []
         index.index_doc(6, None)
-        self.assertEqual(len(executed), 0)
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'LOCK pgtextindex IN EXCLUSIVE MODE;',
+            'DELETE FROM pgtextindex WHERE docid = %s;',
+            'INSERT INTO pgtextindex (docid, text_vector)',
+            'VALUES (%s, null)',
+        ])
+        self.assertEqual(params, (6, 6))
 
     def test_index_doc_empty_string(self):
         index = self._make_one()
         index.cursor.executed = executed = []
         index.index_doc(6, '')
-        self.assertEqual(len(executed), 0)
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'LOCK pgtextindex IN EXCLUSIVE MODE;',
+            'DELETE FROM pgtextindex WHERE docid = %s;',
+            'INSERT INTO pgtextindex (docid, text_vector)',
+            'VALUES (%s, null)',
+        ])
+        self.assertEqual(params, (6, 6))
 
     def test_index_doc_empty_strings_weighted(self):
         index = self._make_one()
         index.cursor.executed = executed = []
         index.index_doc(6, [['', ''], ''])
-        self.assertEqual(len(executed), 0)
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'LOCK pgtextindex IN EXCLUSIVE MODE;',
+            'DELETE FROM pgtextindex WHERE docid = %s;',
+            'INSERT INTO pgtextindex (docid, text_vector)',
+            'VALUES (%s, null)',
+        ])
+        self.assertEqual(params, (6, 6))
 
     def test_index_doc_unweighted(self):
         index = self._make_one()
@@ -138,10 +159,11 @@ class TestPGTextIndex(unittest.TestCase):
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
-            'DELETE FROM pgtextindex',
-            'WHERE docid = %s',
+            'DELETE FROM pgtextindex WHERE docid = %s;',
+            'INSERT INTO pgtextindex (docid, text_vector)',
+            'VALUES (%s, null)',
         ])
-        self.assertEqual(params, (6,))
+        self.assertEqual(params, (6, 6))
 
     def test_index_doc_persistent_object(self):
         from persistent import Persistent
@@ -266,6 +288,19 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertTrue(isinstance(res, index.family.IF.Bucket))
         self.assertEqual(len(res), 2)
 
+    def test_docids(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+        index.cursor.results = [(5,), (6,)]
+        res = index.docids()
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'SELECT docid FROM pgtextindex',
+        ])
+        self.assertEqual(params, None)
+        self.assertTrue(isinstance(res, index.family.IF.Set))
+        self.assertEqual(len(res), 2)
+
     def test_apply_intersect_no_docids(self):
         index = self._make_one()
         index.cursor.executed = executed = []
@@ -338,6 +373,27 @@ class TestPGTextIndex(unittest.TestCase):
         res = index.sort(bucket, limit=2)
         self.assertEqual(res, [8, 9])
 
+    def test_migrate_to_0_8_0(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+        index.cursor.results = [(5,), (6,)]
+        all = index.family.IF.Set([5, 6, 7])
+        index._migrate_to_0_8_0(all)
+        self.assertEqual(len(executed), 2)
+        lines, params = self._format_executed([executed[0]])
+        self.assertEqual(lines, [
+            'SELECT docid FROM pgtextindex',
+        ])
+        self.assertEqual(params, None)
+        lines, params = self._format_executed([executed[1]])
+        self.assertEqual(lines, [
+            'LOCK pgtextindex IN EXCLUSIVE MODE;',
+            'DELETE FROM pgtextindex WHERE docid = %s;',
+            'INSERT INTO pgtextindex (docid, text_vector)',
+            'VALUES (%s, null)',
+        ])
+        self.assertEqual(params, (7, 7))
+
 
 class DummyConnectionManager:
     closed = False
@@ -352,6 +408,8 @@ class DummyConnectionManager:
 
 
 class DummyConnection:
+    encoding = 'UTF-8'
+
     def __init__(self):
         self.commits = 0
         self.rollbacks = 0
@@ -366,13 +424,14 @@ class DummyConnection:
 class DummyCursor:
     def __init__(self):
         self.executed = []
+        self.results = [(5, 1.3), (6, 0.7)]
 
     def execute(self, stmt, params=None):
         self.executed.append((stmt, params))
 
     def __iter__(self):
         """Return an iterable of (docid, score) tuples"""
-        return iter([(5, 1.3), (6, 0.7)])
+        return iter(self.results)
 
     def fetchone(self):
         return ['one']
