@@ -10,6 +10,10 @@ class TestConvertQuery(unittest.TestCase):
     def test_simple(self):
         self.assertEqual(self._call("stuff"), "'stuff'")
 
+    def test_multiple_words(self):
+        self.assertEqual(self._call("stuff I like"),
+            "( 'stuff' ) & ( 'I' ) & ( 'like' )")
+
     def test_extract_from_dict(self):
         self.assertEqual(self._call({'query': "stuff"}), "'stuff'")
 

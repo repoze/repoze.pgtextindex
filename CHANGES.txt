@@ -1,7 +1,8 @@
 Unreleased
 ==========
 
-- Added the 'get_contextual_summary' method to the index.
+- Added the 'get_contextual_summaries' and 'get_contextual_summary'
+  methods to the index.
 
 - Compatability with repoze.catalog 0.8.0.
 

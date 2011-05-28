@@ -392,12 +392,39 @@ class TestPGTextIndex(unittest.TestCase):
     def test_get_contextual_summary(self):
         index = self._make_one()
         index.cursor.executed = executed = []
-        index.get_contextual_summary('raw text', 'query', foo='bar')
+        index.cursor.results = [('<b>query</b>',)]
+        res = index.get_contextual_summary('raw text', 'query', foo='bar')
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'SELECT ts_headline(%s, %s, to_tsquery(%s, %s), %s)'])
-        self.assertEqual(params, ('english', 'raw text', 'english', "'query'",
-                                  'foo=bar'))
+            'SELECT ts_headline(%s, doc.text, to_tsquery(%s, %s), %s)',
+            'FROM (VALUES (%s)) AS doc (text)',
+        ])
+        self.assertEqual(params,
+            ('english', 'english', "'query'", 'foo=bar', 'raw text'))
+        self.assertEqual(res, '<b>query</b>')
+
+    def test_get_two_contextual_summaries(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+        index.cursor.results = [('<b>query</b>',), ('<b>word</b>',)]
+        raw_texts = ['raw 1', 'raw 2']
+        res = index.get_contextual_summaries(raw_texts, 'query', foo='bar')
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'SELECT ts_headline(%s, doc.text, to_tsquery(%s, %s), %s)',
+            'FROM (VALUES (%s), (%s)) AS doc (text)',
+        ])
+        self.assertEqual(params,
+            ('english', 'english', "'query'", 'foo=bar', 'raw 1', 'raw 2'))
+        self.assertEqual(res, ['<b>query</b>', '<b>word</b>'])
+
+    def test_get_zero_contextual_summaries(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+        raw_texts = []
+        res = index.get_contextual_summaries(raw_texts, 'query', foo='bar')
+        self.assertFalse(executed)
+        self.assertEqual(res, [])
 
     def test_sort_nothing(self):
         index = self._make_one()

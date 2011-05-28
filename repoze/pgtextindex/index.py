@@ -258,22 +258,34 @@ class PGTextIndex(Persistent):
         return res
 
     def get_contextual_summary(self, raw_text, query, **options):
-        """Given the raw text of a document and a query, returns a snippet of
-        text with the words in the query highlighted using html. Calls the
-        PostgreSQL function, 'ts_headline'. Options are turned into an options
-        string passed to 'ts_headline'. See the documentation for PostgreSQL
-        for more information on the options that can be passed to
-        'ts_headline'."""
+        """BBB: get just one contextual summary."""
+        return self.get_contextual_summaries([raw_text], query, **options)[0]
+
+    def get_contextual_summaries(self, raw_texts, query, **options):
+        """Get contextual summaries for each of several search results.
+
+        Produces a list of the same length as the raw_texts sequence.
+        For each raw_text, returns snippets of text with the words in
+        the query highlighted using the html <b> tag. Calls the
+        PostgreSQL function 'ts_headline'. Options are turned into an
+        options string passed to 'ts_headline'. See the documentation
+        for PostgreSQL for more information on the options that can be
+        passed to 'ts_headline'.
+        """
+        if not raw_texts:
+            return []
         s = convert_query(query)
         options = ','.join(['%s=%s' % (k, v) for k, v in options.items()])
         stmt = """
-        SELECT ts_headline(%s, %s, to_tsquery(%s, %s), %s)
+        SELECT ts_headline(%s, doc.text, to_tsquery(%s, %s), %s)
+        FROM (VALUES <values>) AS doc (text)
         """
+        stmt = stmt.replace('<values>', ', '.join(('(%s)',) * len(raw_texts)))
         cursor = self.cursor
-        cursor.execute(stmt, (self.ts_config, raw_text, self.ts_config,
-                              s, options))
-        summary = cursor.fetchone()[0]
-        return summary.decode(self.connection.encoding)
+        params = (self.ts_config, self.ts_config, s, options)
+        cursor.execute(stmt, params + tuple(raw_texts))
+        return [summary.decode(self.connection.encoding)
+            for (summary,) in cursor]
 
     def apply_intersect(self, query, docids):
         """ Run the query implied by query, and return query results
@@ -371,7 +383,7 @@ class PGTextIndex(Persistent):
 
     def _migrate_to_0_8_0(self, docids):
         """
-        Seaver's law: "Persistence means always having to say your sorry."
+        Seaver's law: "Persistence means always having to say you're sorry."
 
         Insert null value rows for docs that are in catalog but don't have
         values for this index.
