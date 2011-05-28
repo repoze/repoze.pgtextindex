@@ -157,7 +157,7 @@ class TestPostgresConnectionManager(unittest.TestCase):
         import transaction
         self.assertRaises(ValueError, transaction.commit)
         self.assertEqual(conn.commits, 0)
-        self.assertEqual(conn.rollbacks, 2)
+        self.assertEqual(conn.rollbacks, 3)
 
     def test_commit_and_rollback_fail_generic(self):
         cm = self._make_one()

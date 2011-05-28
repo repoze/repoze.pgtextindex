@@ -100,6 +100,7 @@ class PostgresConnectionManager(object):
                     try:
                         c.rollback()
                     except (KeyboardInterrupt, SystemExit):  # pragma: no cover
+                        self.close()
                         raise
                     except:
                         self.close()
@@ -108,7 +109,7 @@ class PostgresConnectionManager(object):
             self._joined = False
 
     def tpc_abort(self, transaction):
-        pass
+        self.abort(transaction)
 
     def sortKey(self):
         # The DSN might contain a password, so don't expose it.
