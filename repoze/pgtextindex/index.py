@@ -2,6 +2,8 @@
 from persistent import Persistent
 from repoze.catalog.interfaces import ICatalogIndex
 from repoze.pgtextindex.db import PostgresConnectionManager
+from repoze.pgtextindex.interfaces import IWeightedQuery
+from repoze.pgtextindex.interfaces import IWeightedText
 from repoze.pgtextindex.queryconvert import convert_query
 from zope.index.interfaces import IIndexSort
 from zope.interface import implements
@@ -26,7 +28,7 @@ class PGTextIndex(Persistent):
                  table='pgtextindex',
                  ts_config='english',
                  connection_manager_factory=None,
-                 drop_and_create=True
+                 drop_and_create=False,
                  ):
 
         if not callable(discriminator):
@@ -74,13 +76,13 @@ class PGTextIndex(Persistent):
         conn = cm.connection
         cursor = cm.cursor
         try:
-            # create the table with 2 columns: the integer docid
-            # and a tsvector object.
+            # Create the table.
             stmt = """
             DROP TABLE IF EXISTS %(table)s;
 
             CREATE TABLE %(table)s (
                 docid INTEGER NOT NULL PRIMARY KEY,
+                coefficient REAL NOT NULL DEFAULT 1.0,
                 text_vector tsvector
             );
 
@@ -107,9 +109,19 @@ class PGTextIndex(Persistent):
 
         docid: int, identifying the document
 
-        value: the value to be indexed: either a list of strings,
-            where each string has a progressively lower weight, or
-            a single string.
+        obj: The document to be indexed.
+
+        The discriminator assigned to the index is used to extract a
+        value from the document.  The value is either:
+
+        - an object that implements IWeightedText, or
+
+        - a string, or
+
+        - a list or tuple of strings, which will be interpreted as weighted
+          texts, with the default weight last, the A, B, and C weights
+          first (if the list has enough strings), and other strings
+          added to the default weight.
 
         return: None
 
@@ -125,48 +137,44 @@ class PGTextIndex(Persistent):
             self._index_null(docid)
             return None
 
-        if isinstance(value, Persistent):
-            raise ValueError('Catalog cannot index persistent object %s' %
-                             value)
+        if isinstance(value, (list, tuple)):
+            # Convert to a WeightedText.  The last value is always
+            # a default text, then if there are other values, the first
+            # value is assigned the A weight, the second is B, the third
+            # is C, and the rest are assigned the default weight.
+            abc = value[:-1][:3]
+            kw = {'default': ' '.join(value[len(abc):])}
+            value = SimpleWeightedText(*abc, **kw)
 
         clauses = []
-        params = [docid, docid]
-        if isinstance(value, basestring):
-            value = [value]
-        elif not value:
-            value = ['']
-
-        # apply the highest weight to the first string,
-        # progressively lower weight to successive strings,
-        # and the default weight to the last string.
-        for i, texts in enumerate(value[:-1]):
-            if texts:
-                if isinstance(texts, basestring):
-                    texts = [texts]
-                for text in texts:
-                    if not text:
-                        continue
-                    # PostgreSQL supports 4 weights: A, B, C, and Default.
-                    weight = 'ABC'[min(i, 2)]
+        if IWeightedText.providedBy(value):
+            coefficient = getattr(value, 'coefficient', 1.0)
+            params = [docid, docid, coefficient]
+            text = '%s' % value  # Call the __str__() method
+            if text:
+                clauses.append('to_tsvector(%s, %s)')
+                params.extend([self.ts_config, text])
+            for weight in ('A', 'B', 'C'):
+                text = getattr(value, weight, None)
+                if text:
                     clauses.append('setweight(to_tsvector(%s, %s), %s)')
-                    params.extend([self.ts_config, text, weight])
+                    params.extend([self.ts_config, '%s' % text, weight])
 
-        texts = value[-1]
-        if isinstance(texts, basestring):
-            texts = [texts]
-        for text in texts:
-            if not text:
-                continue
-            clauses.append('to_tsvector(%s, %s)')
-            params.extend([self.ts_config, text])
+        else:
+            # The value is a simple string.  Strings can not
+            # influence the weighting.
+            params = [docid, docid, 1.0]
+            if value:
+                clauses.append('to_tsvector(%s, %s)')
+                params.extend([self.ts_config, '%s' % value])
 
-        if len(params) > 2:
+        if len(params) > 3:
             clause = ' || '.join(clauses)
             stmt = """
             LOCK %(table)s IN EXCLUSIVE MODE;
             DELETE FROM %(table)s WHERE docid = %%s;
-            INSERT INTO %(table)s (docid, text_vector)
-            VALUES (%%s, %(clause)s)
+            INSERT INTO %(table)s (docid, coefficient, text_vector)
+            VALUES (%%s, %%s, %(clause)s)
             """ % {'table': self.table, 'clause': clause}
             self.cursor.execute(stmt, tuple(params))
 
@@ -179,8 +187,8 @@ class PGTextIndex(Persistent):
         stmt = """
         LOCK %(table)s IN EXCLUSIVE MODE;
         DELETE FROM %(table)s WHERE docid = %%s;
-        INSERT INTO %(table)s (docid, text_vector)
-        VALUES (%%s, null)
+        INSERT INTO %(table)s (docid, coefficient, text_vector)
+        VALUES (%%s, 0.0, null)
         """ % {'table': self.table}
         self.cursor.execute(stmt, (docid, docid))
 
@@ -210,31 +218,54 @@ class PGTextIndex(Persistent):
         """ % self._subs
         self.cursor.execute(stmt)
 
-    def applyContains(self, query):
-        s = convert_query(query)
+    def _run_query(self, query, invert=False, docids=None):
+        kw = {
+            'table': self.table,
+            'weight': '',
+            'not': '',
+            'filter_clause': '',
+        }
+        if invert:
+            kw['not'] = 'NOT'
+
+        if IWeightedQuery.providedBy(query):
+            kw['weight'] = '{%s, %s, %s, %s}, '
+            params = (
+                query.D,
+                query.C,
+                query.B,
+                query.A,
+                self.ts_config,
+                convert_query(query.text),
+            )
+        else:
+            params = (self.ts_config, convert_query(query))
+
+        if docids is not None:
+            docidstr = ','.join(str(docid) for docid in docids)
+            kw['filter_clause'] = 'AND docid IN (%s)' % docidstr
+
         stmt = """
-        SELECT docid, ts_rank_cd(text_vector, query) AS rank
-        FROM %s, to_tsquery(%%s, %%s) query
-        WHERE text_vector @@ query
+        SELECT docid,
+            coefficient * ts_rank_cd(%(weight)stext_vector, query) AS rank
+        FROM %(table)s, to_tsquery(%%s, %%s) query
+        WHERE %(not)s(text_vector @@ query)
+        %(filter_clause)s
         ORDER BY rank DESC
-        """ % self.table
+        """ % kw
         cursor = self.cursor
-        cursor.execute(stmt, (self.ts_config, s))
+        cursor.execute(stmt, params)
+        return cursor
+
+    def applyContains(self, query):
+        cursor = self._run_query(query)
         data = list(cursor)
         res = self.family.IF.Bucket()
         res.update(data)
         return res
 
     def applyDoesNotContain(self, query):
-        s = convert_query(query)
-        stmt = """
-        SELECT docid, ts_rank_cd(text_vector, query) AS rank
-        FROM %s, to_tsquery(%%s, %%s) query
-        WHERE NOT(text_vector @@ query)
-        ORDER BY rank DESC
-        """ % self.table
-        cursor = self.cursor
-        cursor.execute(stmt, (self.ts_config, s))
+        cursor = self._run_query(query, invert=True)
         data = list(cursor)
         res = self.family.IF.Bucket()
         res.update(data)
@@ -258,15 +289,15 @@ class PGTextIndex(Persistent):
         return res
 
     def get_contextual_summary(self, raw_text, query, **options):
-        """BBB: get just one contextual summary."""
+        """BBB: get one contextual summary."""
         return self.get_contextual_summaries([raw_text], query, **options)[0]
 
     def get_contextual_summaries(self, raw_texts, query, **options):
-        """Get contextual summaries for each of several search results.
+        """Get a contextual summary for each search result.
 
         Produces a list of the same length as the raw_texts sequence.
         For each raw_text, returns snippets of text with the words in
-        the query highlighted using the html <b> tag. Calls the
+        the query highlighted using HTML tags. Calls the
         PostgreSQL function 'ts_headline'. Options are turned into an
         options string passed to 'ts_headline'. See the documentation
         for PostgreSQL for more information on the options that can be
@@ -276,11 +307,12 @@ class PGTextIndex(Persistent):
             return []
         s = convert_query(query)
         options = ','.join(['%s=%s' % (k, v) for k, v in options.items()])
+
+        value_clauses = ', '.join(('(%s)',) * len(raw_texts))
         stmt = """
-        SELECT ts_headline(%s, doc.text, to_tsquery(%s, %s), %s)
-        FROM (VALUES <values>) AS doc (text)
-        """
-        stmt = stmt.replace('<values>', ', '.join(('(%s)',) * len(raw_texts)))
+        SELECT ts_headline(%%s, doc.text, to_tsquery(%%s, %%s), %%s)
+        FROM (VALUES %s) AS doc (text)
+        """ % value_clauses
         cursor = self.cursor
         params = (self.ts_config, self.ts_config, s, options)
         cursor.execute(stmt, params + tuple(raw_texts))
@@ -294,18 +326,7 @@ class PGTextIndex(Persistent):
         """
         if not docids:
             return self.family.IF.Bucket()
-        docidstr = ','.join(str(docid) for docid in docids)
-
-        s = convert_query(query)
-        stmt = """
-        SELECT docid, ts_rank_cd(text_vector, query) AS rank
-        FROM %s, to_tsquery(%%s, %%s) query
-        WHERE text_vector @@ query
-            AND docid IN (%s)
-        ORDER BY rank DESC
-        """ % (self.table, docidstr)
-        cursor = self.cursor
-        cursor.execute(stmt, (self.ts_config, s))
+        cursor = self._run_query(query, docids=docids)
         data = list(cursor)
         res = self.family.IF.Bucket()
         res.update(data)
@@ -417,3 +438,16 @@ def _mp_release_resources(jar):
                 close()
         del jar.foreign_connections
     jar._release_resources = _release_resources
+
+
+class SimpleWeightedText(object):
+    implements(IWeightedText)
+
+    def __init__(self, A=None, B=None, C=None, default=''):
+        self.A = A
+        self.B = B
+        self.C = C
+        self.default = default
+
+    def __str__(self):
+        return self.default
