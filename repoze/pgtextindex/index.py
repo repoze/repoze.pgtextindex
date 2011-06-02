@@ -229,7 +229,7 @@ class PGTextIndex(Persistent):
             kw['not'] = 'NOT'
 
         if IWeightedQuery.providedBy(query):
-            kw['weight'] = '{%s, %s, %s, %s}, '
+            kw['weight'] = "'{%s, %s, %s, %s}', "
             params = (
                 query.D,
                 query.C,
