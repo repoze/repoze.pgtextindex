@@ -1,6 +1,23 @@
 Unreleased
 ==========
 
+- Reworked the scoring method: added a per-document score coefficient.
+  The score coefficient can boost the score of documents known to be
+  trustworthy.
+
+- Added the IWeightedText interface.  The discriminator function can
+  return an IWeightedText instance to control the weights and
+  coefficient.
+
+- Added the IWeightedQuery interface.  Text index queries can
+  pass an IWeightedQuery instance to control the weight values.
+
+- Allow persistent objects to be indexed, since the usual objection
+  (accidental ZODB references) does not apply.
+
+- Do not drop and create the table by default, making PGTextIndex
+  easier to use outside ZODB.
+
 - Added the 'get_contextual_summaries' and 'get_contextual_summary'
   methods to the index.
 
