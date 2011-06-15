@@ -1,5 +1,5 @@
-Unreleased
-==========
+0.2 (2011-06-15)
+================
 
 - Reworked the scoring method: added a per-document score coefficient.
   The score coefficient can boost the score of documents known to be
