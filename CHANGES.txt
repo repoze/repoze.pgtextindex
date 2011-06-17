@@ -1,6 +1,8 @@
 Unreleased
 ==========
 
+- Fixed PostgreSQL ProgrammingError when query string contains a backslash
+  character.  (LP #798725)
 
 0.2 (2011-06-15)
 ================

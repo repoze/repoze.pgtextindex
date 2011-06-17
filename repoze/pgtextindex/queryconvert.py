@@ -7,6 +7,7 @@ def convert_query(query):
         text = query['query']
     else:
         text = query
+    text = text.replace('\\', '\\\\')
     tree = QueryParser().parseQuery(text)
     return ParseTreeEncoder().encode(tree)
 
