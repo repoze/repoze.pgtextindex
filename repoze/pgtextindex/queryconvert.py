@@ -7,7 +7,6 @@ def convert_query(query):
         text = query['query']
     else:
         text = query
-    text = text.replace('\\', '\\\\')
     tree = QueryParser().parseQuery(text)
     return ParseTreeEncoder().encode(tree)
 
@@ -34,6 +33,7 @@ class ParseTreeEncoder:
             value = ' '.join(value)
         res = value.replace("'", "").replace('"', '')
         res = res.replace('*', '').replace('?', '')
+        res = res.replace('\\', '\\\\')
         return res
 
     def encode_ATOM(self, node):
