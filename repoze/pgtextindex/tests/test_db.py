@@ -67,9 +67,11 @@ class TestPostgresConnectionManager(unittest.TestCase):
         verifyObject(IDataManager, self._make_one())
 
     def test_connection_attr(self):
+        import psycopg2
         cm = self._make_one()
         self.assertEqual(cm.connection.dsn, "dbname=dummy")
-        self.assertEqual(cm.connection.isolation_level, 2)
+        self.assertEqual(cm.connection.isolation_level,
+            psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
 
     def test_cursor_attr(self):
         cm = self._make_one()

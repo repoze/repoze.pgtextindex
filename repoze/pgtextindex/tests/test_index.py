@@ -7,12 +7,12 @@ class TestPGTextIndex(unittest.TestCase):
         from repoze.pgtextindex.index import PGTextIndex
         return PGTextIndex
 
-    def _make_one(self, discriminator=None, dsn="dbname=dummy"):
+    def _make_one(self, discriminator=None, dsn="dbname=dummy", **kw):
         if discriminator is None:
             def discriminator(obj, default):
                 return obj
         return self._get_class()(discriminator, dsn,
-            connection_manager_factory=DummyConnectionManager)
+            connection_manager_factory=DummyConnectionManager, **kw)
 
     def test_class_conforms_to_ICatalogIndex(self):
         from zope.interface.verify import verifyClass
@@ -38,9 +38,15 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertRaises(ValueError, self._make_one,
             object())
 
+    def test_ctor_drop_and_create(self):
+        index = self._make_one(drop_and_create=True)
+        self.assertNotEqual(None, index._v_temp_cm)
+
     def test_connection_manager_from_volatile_attr(self):
         index = self._make_one()
-        self.assertEqual(index.connection_manager, index._v_temp_cm)
+        self.assertEqual(None, index._v_temp_cm)
+        cm = index.connection_manager
+        self.assertEqual(cm, index._v_temp_cm)
 
     def test_connection_manager_from_jar(self):
         class DummyZODBConnection:
@@ -280,7 +286,7 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params, None)
 
-    def test_apply(self):
+    def test_apply_simple(self):
         index = self._make_one()
         index.cursor.executed = executed = []
         res = index.apply('Waldo Wally')
@@ -362,6 +368,37 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params,
             ('english', "( 'Waldo' ) & ( 'Wally' )"))
+        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(len(res), 2)
+
+    def test_apply_weighted_query(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+
+        from zope.interface import implements
+        from repoze.pgtextindex.interfaces import IWeightedQuery
+
+        class DummyWeightedQuery(object):
+            implements(IWeightedQuery)
+            A = 16 ** 3
+            B = 16 ** 2
+            C = 16
+            D = 1
+            text = 'Waldo Wally'
+
+        q = DummyWeightedQuery()
+        res = index.apply(q)
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'SELECT docid,',
+            'coefficient * ts_rank_cd(\'{%s, %s, %s, %s}\', text_vector, query) '
+                'AS rank',
+            'FROM pgtextindex, to_tsquery(%s, %s) query',
+            'WHERE (text_vector @@ query)',
+            'ORDER BY rank DESC',
+        ])
+        self.assertEqual(params,
+            (1, 16, 256, 4096, 'english', "( 'Waldo' ) & ( 'Wally' )"))
         self.assertTrue(isinstance(res, index.family.IF.Bucket))
         self.assertEqual(len(res), 2)
 
