@@ -95,8 +95,9 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex (docid, coefficient, text_vector)',
-            'VALUES (%s, 0.0, null)',
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, 0.0, null, null)',
         ])
         self.assertEqual(params, (6, 6))
 
@@ -108,8 +109,9 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex (docid, coefficient, text_vector)',
-            'VALUES (%s, 0.0, null)',
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, 0.0, null, null)',
         ])
         self.assertEqual(params, (6, 6))
 
@@ -121,10 +123,11 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex (docid, coefficient, text_vector)',
-            'VALUES (%s, %s, setweight(to_tsvector(%s, %s), %s))',
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, %s, %s, setweight(to_tsvector(%s, %s), %s))',
         ])
-        self.assertEqual(params, (6, 6, 1.0, 'english', "['', '']", 'A'))
+        self.assertEqual(params, (6, 6, 1.0, None, 'english', "['', '']", 'A'))
 
     def test_index_doc_unweighted(self):
         index = self._make_one()
@@ -134,10 +137,11 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex (docid, coefficient, text_vector)',
-            'VALUES (%s, %s, to_tsvector(%s, %s))',
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, %s, %s, to_tsvector(%s, %s))',
         ])
-        self.assertEqual(params, (5, 5, 1.0, 'english', 'Waldo'))
+        self.assertEqual(params, (5, 5, 1.0, None, 'english', 'Waldo'))
 
     def test_index_doc_using_attr_discriminator(self):
         class DummyObject:
@@ -150,10 +154,11 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex (docid, coefficient, text_vector)',
-            'VALUES (%s, %s, to_tsvector(%s, %s))',
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, %s, %s, to_tsvector(%s, %s))',
         ])
-        self.assertEqual(params, (6, 6, 1.0, 'english', 'Osvaldo'))
+        self.assertEqual(params, (6, 6, 1.0, None, 'english', 'Osvaldo'))
 
     def test_index_doc_missing_value(self):
         def discriminator(obj, default):
@@ -166,8 +171,9 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex (docid, coefficient, text_vector)',
-            'VALUES (%s, 0.0, null)',
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, 0.0, null, null)',
         ])
         self.assertEqual(params, (6, 6))
 
@@ -188,10 +194,11 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex (docid, coefficient, text_vector)',
-            'VALUES (%s, %s, to_tsvector(%s, %s))',
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, %s, %s, to_tsvector(%s, %s))',
         ])
-        self.assertEqual(params, (6, 6, 1.0, 'english', 'x'))
+        self.assertEqual(params, (6, 6, 1.0, None, 'english', 'x'))
 
     def test_index_doc_use_one_weight(self):
         index = self._make_one()
@@ -201,11 +208,12 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex (docid, coefficient, text_vector)',
-            'VALUES (%s, %s, to_tsvector(%s, %s) || '
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, %s, %s, to_tsvector(%s, %s) || '
                 'setweight(to_tsvector(%s, %s), %s))',
         ])
-        self.assertEqual(params, (5, 5, 1.0,
+        self.assertEqual(params, (5, 5, 1.0, None,
             'english', 'character',
             'english', 'Waldo', 'A',
         ))
@@ -218,13 +226,14 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex (docid, coefficient, text_vector)',
-            'VALUES (%s, %s, to_tsvector(%s, %s) || '
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, %s, %s, to_tsvector(%s, %s) || '
                 'setweight(to_tsvector(%s, %s), %s) || '
                 'setweight(to_tsvector(%s, %s), %s) || '
                 'setweight(to_tsvector(%s, %s), %s))',
         ])
-        self.assertEqual(params, (5, 5, 1.0,
+        self.assertEqual(params, (5, 5, 1.0, None,
             'english', 'person entity',
             'english', 'Waldo', 'A',
             'english', 'character', 'B',
@@ -239,14 +248,38 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex (docid, coefficient, text_vector)',
-            'VALUES (%s, %s, setweight(to_tsvector(%s, %s), %s) || '
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, %s, %s, setweight(to_tsvector(%s, %s), %s) || '
                 'setweight(to_tsvector(%s, %s), %s))',
         ])
-        self.assertEqual(params, (5, 5, 1.0,
+        self.assertEqual(params, (5, 5, 1.0, None,
             'english', 'Waldo', 'A',
             'english', 'boy', 'C',
         ))
+
+    def test_index_doc_with_marker(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+
+        from repoze.pgtextindex.interfaces import IWeightedText
+        from zope.interface import implements
+
+        class DummyText(unicode):
+            implements(IWeightedText)
+            marker = 'book'
+
+        index.index_doc(5, DummyText('Where is Waldo'))
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'LOCK pgtextindex IN EXCLUSIVE MODE;',
+            'DELETE FROM pgtextindex WHERE docid = %s;',
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, %s, %s, to_tsvector(%s, %s))',
+        ])
+        self.assertEqual(params,
+            (5, 5, 1.0, 'book', 'english', 'Where is Waldo'))
 
     def test_index_doc_multiple_texts_with_the_same_weight(self):
         index = self._make_one()
@@ -256,10 +289,11 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex (docid, coefficient, text_vector)',
-            'VALUES (%s, %s, setweight(to_tsvector(%s, %s), %s))',
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, %s, %s, setweight(to_tsvector(%s, %s), %s))',
         ])
-        self.assertEqual(params, (5, 5, 1.0,
+        self.assertEqual(params, (5, 5, 1.0, None,
             'english', "['Waldo', 'Wally']", 'A',
         ))
 
@@ -378,15 +412,14 @@ class TestPGTextIndex(unittest.TestCase):
         from zope.interface import implements
         from repoze.pgtextindex.interfaces import IWeightedQuery
 
-        class DummyWeightedQuery(object):
+        class DummyWeightedQuery(unicode):
             implements(IWeightedQuery)
             A = 16 ** 3
             B = 16 ** 2
             C = 16
             D = 1
-            text = 'Waldo Wally'
 
-        q = DummyWeightedQuery()
+        q = DummyWeightedQuery('Waldo Wally')
         res = index.apply(q)
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
@@ -399,6 +432,103 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params,
             (1, 16, 256, 4096, 'english', "( 'Waldo' ) & ( 'Wally' )"))
+        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(len(res), 2)
+
+    def test_apply_with_marker(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+
+        from zope.interface import implements
+        from repoze.pgtextindex.interfaces import IWeightedQuery
+
+        class DummyWeightedQuery(unicode):
+            implements(IWeightedQuery)
+            marker = 'book'
+
+        q = DummyWeightedQuery('Waldo Wally')
+        res = index.apply(q)
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'SELECT docid,',
+            "coefficient * ts_rank_cd('{%s, %s, %s, %s}', "
+                "text_vector, query) AS rank",
+            'FROM pgtextindex, to_tsquery(%s, %s) query',
+            'WHERE (text_vector @@ query)',
+            'AND marker = %s',
+            'ORDER BY rank DESC',
+        ])
+        self.assertEqual(params,
+            (0.1, 0.2, 0.4, 1.0, 'english', "( 'Waldo' ) & ( 'Wally' )",
+            'book'))
+        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(len(res), 2)
+
+    def test_apply_with_limit_and_offset(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+
+        from zope.interface import implements
+        from repoze.pgtextindex.interfaces import IWeightedQuery
+
+        class DummyWeightedQuery(unicode):
+            implements(IWeightedQuery)
+            limit = 5
+            offset = 10
+
+        q = DummyWeightedQuery('Waldo Wally')
+        res = index.apply(q)
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'SELECT docid,',
+            "coefficient * ts_rank_cd('{%s, %s, %s, %s}', "
+                "text_vector, query) AS rank",
+            'FROM pgtextindex, to_tsquery(%s, %s) query',
+            'WHERE (text_vector @@ query)',
+            'ORDER BY rank DESC',
+            'LIMIT %s',
+            'OFFSET %s',
+        ])
+        self.assertEqual(params,
+            (0.1, 0.2, 0.4, 1.0, 'english', "( 'Waldo' ) & ( 'Wally' )",
+            5, 10))
+        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(len(res), 2)
+
+    def test_apply_with_all_weight_and_limit_features(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+
+        from zope.interface import implements
+        from repoze.pgtextindex.interfaces import IWeightedQuery
+
+        class DummyWeightedQuery(unicode):
+            implements(IWeightedQuery)
+            A = 16 ** 3
+            B = 16 ** 2
+            C = 16
+            D = 1
+            marker = 'book'
+            limit = 5
+            offset = 10
+
+        q = DummyWeightedQuery('Waldo Wally')
+        res = index.apply(q)
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'SELECT docid,',
+            "coefficient * ts_rank_cd('{%s, %s, %s, %s}', "
+                "text_vector, query) AS rank",
+            'FROM pgtextindex, to_tsquery(%s, %s) query',
+            'WHERE (text_vector @@ query)',
+            'AND marker = %s',
+            'ORDER BY rank DESC',
+            'LIMIT %s',
+            'OFFSET %s',
+        ])
+        self.assertEqual(params,
+            (1, 16, 256, 4096, 'english', "( 'Waldo' ) & ( 'Wally' )",
+            'book', 5, 10))
         self.assertTrue(isinstance(res, index.family.IF.Bucket))
         self.assertEqual(len(res), 2)
 
@@ -545,8 +675,9 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(lines, [
             'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex (docid, coefficient, text_vector)',
-            'VALUES (%s, 0.0, null)',
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, 0.0, null, null)',
         ])
         self.assertEqual(params, (7, 7))
 
