@@ -391,8 +391,8 @@ class TestPGTextIndex(unittest.TestCase):
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
             'SELECT docid,',
-            'coefficient * ts_rank_cd(\'{%s, %s, %s, %s}\', text_vector, query) '
-                'AS rank',
+            "coefficient * ts_rank_cd('{%s, %s, %s, %s}', "
+                "text_vector, query) AS rank",
             'FROM pgtextindex, to_tsquery(%s, %s) query',
             'WHERE (text_vector @@ query)',
             'ORDER BY rank DESC',
