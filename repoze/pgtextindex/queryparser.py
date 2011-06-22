@@ -235,18 +235,25 @@ class QueryParser(object):
     def _parseAtom(self):
         invert = False
         term = self._get(_ATOM)
+        orig_term = term
         if term.startswith('-'):
             term = term[1:]
             invert = True
+
         mo = _quote_re.match(term)
         if mo is not None:
-            words = filter(None, mo.group(1).split())
+            words = mo.group(1).split()
         else:
             words = [term]
 
+        # Filter out empty words and words that are nothing but
+        # special characters. (Keep the special characters in words that have
+        # them, though.)
+        words = filter(remove_special_chars, words)
         if not words:
-            self._ignored.append(term)
+            self._ignored.append(orig_term)
             return None
+
         if len(words) > 1:
             tree = parsetree.PhraseNode(words)
         elif '*' in words[0] or '?' in words[0]:
@@ -256,3 +263,12 @@ class QueryParser(object):
         if invert:
             tree = parsetree.NotNode(tree)
         return tree
+
+
+def remove_special_chars(s):
+    """Remove characters that have a special meaning to the query parser."""
+    if not s:
+        return s
+    s = s.replace("'", "").replace('"', '')
+    s = s.replace('*', '').replace('?', '')
+    return s

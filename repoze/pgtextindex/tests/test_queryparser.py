@@ -243,6 +243,77 @@ class TestQueryParser(TestQueryParserBase):
         self._expect(parser, "foo* bar",
                      AndNode([GlobNode("foo*"), AtomNode("bar")]))
 
+    def test_lone_hyphen(self):
+        from zope.index.text.parsetree import AndNode
+        from zope.index.text.parsetree import AtomNode
+        parser = self._makeOne()
+        self._expect(parser, "foo - bar",
+                     AndNode([AtomNode("foo"), AtomNode("bar")]),
+                     expected_ignored=['-'])
+
+    def test_lone_asterisk(self):
+        from zope.index.text.parsetree import AndNode
+        from zope.index.text.parsetree import AtomNode
+        parser = self._makeOne()
+        self._expect(parser, "foo * bar",
+                     AndNode([AtomNode("foo"), AtomNode("bar")]),
+                     expected_ignored=['*'])
+
+    def test_lone_question_mark(self):
+        from zope.index.text.parsetree import AndNode
+        from zope.index.text.parsetree import AtomNode
+        parser = self._makeOne()
+        self._expect(parser, "foo ? bar",
+                     AndNode([AtomNode("foo"), AtomNode("bar")]),
+                     expected_ignored=['?'])
+
+    def test_lone_apostrophe(self):
+        from zope.index.text.parsetree import AndNode
+        from zope.index.text.parsetree import AtomNode
+        parser = self._makeOne()
+        self._expect(parser, "foo ' bar",
+                     AndNode([AtomNode("foo"), AtomNode("bar")]),
+                     expected_ignored=["'"])
+
+    def test_lone_quote(self):
+        from zope.index.text.parsetree import AndNode
+        from zope.index.text.parsetree import AtomNode
+        parser = self._makeOne()
+        self._expect(parser, 'foo " bar',
+                     AndNode([AtomNode("foo"), AtomNode("bar")]),
+                     expected_ignored=[])
+
+    def test_phrase_with_only_whitespace(self):
+        from zope.index.text.parsetree import AndNode
+        from zope.index.text.parsetree import AtomNode
+        parser = self._makeOne()
+        self._expect(parser, 'foo " " bar',
+                     AndNode([AtomNode("foo"), AtomNode("bar")]),
+                     expected_ignored=['" "'])
+
+    def test_2_asterisks(self):
+        from zope.index.text.parsetree import AndNode
+        from zope.index.text.parsetree import AtomNode
+        parser = self._makeOne()
+        self._expect(parser, "foo ** bar",
+                     AndNode([AtomNode("foo"), AtomNode("bar")]),
+                     expected_ignored=['**'])
+
+    def test_3_asterisks(self):
+        from zope.index.text.parsetree import AndNode
+        from zope.index.text.parsetree import AtomNode
+        parser = self._makeOne()
+        self._expect(parser, "foo *** bar",
+                     AndNode([AtomNode("foo"), AtomNode("bar")]),
+                     expected_ignored=['***'])
+
+    def test_asterisk_in_phrase(self):
+        from zope.index.text.parsetree import AndNode
+        from zope.index.text.parsetree import PhraseNode
+        parser = self._makeOne()
+        self._expect(parser, '"foo bar* * baz"',
+                     PhraseNode(['foo', 'bar*', 'baz']))
+
     def test101(self):
         parser = self._makeOne()
         self._failure(parser, "")

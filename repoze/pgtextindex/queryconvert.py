@@ -1,5 +1,7 @@
 
 from repoze.pgtextindex.queryparser import QueryParser
+from repoze.pgtextindex.queryparser import remove_special_chars
+
 
 def convert_query(query):
     """Convert a Zope text index query to PostgreSQL tsearch format"""
@@ -9,6 +11,7 @@ def convert_query(query):
         text = query
     tree = QueryParser().parseQuery(text)
     return ParseTreeEncoder().encode(tree)
+
 
 class ParseTreeEncoder:
 
@@ -31,8 +34,7 @@ class ParseTreeEncoder:
         value = node.getValue()
         if not isinstance(value, basestring):
             value = ' '.join(value)
-        res = value.replace("'", "").replace('"', '')
-        res = res.replace('*', '').replace('?', '')
+        res = remove_special_chars(value)
         res = res.replace('\\', '\\\\')
         return res
 
