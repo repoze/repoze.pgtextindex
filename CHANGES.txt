@@ -4,6 +4,9 @@ Unreleased
 - Fixed PostgreSQL ProgrammingError when query string contains a backslash
   character.  (LP #798725)
 
+- Added ability to mark content with arbitrary markers which can be used as 
+  discriminators at query time.  (LP #792334)
+
 0.2 (2011-06-15)
 ================
 

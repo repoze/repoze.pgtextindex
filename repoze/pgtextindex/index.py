@@ -11,7 +11,7 @@ import BTrees
 
 import logging
 
-_marker = object()
+_missing = object()
 log = logging.getLogger(__name__)
 
 
@@ -83,6 +83,7 @@ class PGTextIndex(Persistent):
             CREATE TABLE %(table)s (
                 docid INTEGER NOT NULL PRIMARY KEY,
                 coefficient REAL NOT NULL DEFAULT 1.0,
+                marker CHARACTER VARYING,
                 text_vector tsvector
             );
 
@@ -128,11 +129,11 @@ class PGTextIndex(Persistent):
         This can also be used to reindex documents.
         """
         if callable(self.discriminator):
-            value = self.discriminator(obj, _marker)
+            value = self.discriminator(obj, _missing)
         else:
-            value = getattr(obj, self.discriminator, _marker)
+            value = getattr(obj, self.discriminator, _missing)
 
-        if value is _marker:
+        if value is _missing:
             # unindex the previous value
             self._index_null(docid)
             return None
@@ -149,7 +150,8 @@ class PGTextIndex(Persistent):
         clauses = []
         if IWeightedText.providedBy(value):
             coefficient = getattr(value, 'coefficient', 1.0)
-            params = [docid, docid, coefficient]
+            marker = getattr(value, 'marker', None)
+            params = [docid, docid, coefficient, marker]
             text = '%s' % value  # Call the __str__() method
             if text:
                 clauses.append('to_tsvector(%s, %s)')
@@ -163,18 +165,18 @@ class PGTextIndex(Persistent):
         else:
             # The value is a simple string.  Strings can not
             # influence the weighting.
-            params = [docid, docid, 1.0]
+            params = [docid, docid, 1.0, None]
             if value:
                 clauses.append('to_tsvector(%s, %s)')
                 params.extend([self.ts_config, '%s' % value])
 
-        if len(params) > 3:
+        if len(params) > 4:
             clause = ' || '.join(clauses)
             stmt = """
             LOCK %(table)s IN EXCLUSIVE MODE;
             DELETE FROM %(table)s WHERE docid = %%s;
-            INSERT INTO %(table)s (docid, coefficient, text_vector)
-            VALUES (%%s, %%s, %(clause)s)
+            INSERT INTO %(table)s (docid, coefficient, marker, text_vector)
+            VALUES (%%s, %%s, %%s, %(clause)s)
             """ % {'table': self.table, 'clause': clause}
             self.cursor.execute(stmt, tuple(params))
 
@@ -187,8 +189,8 @@ class PGTextIndex(Persistent):
         stmt = """
         LOCK %(table)s IN EXCLUSIVE MODE;
         DELETE FROM %(table)s WHERE docid = %%s;
-        INSERT INTO %(table)s (docid, coefficient, text_vector)
-        VALUES (%%s, 0.0, null)
+        INSERT INTO %(table)s (docid, coefficient, marker, text_vector)
+        VALUES (%%s, 0.0, null, null)
         """ % {'table': self.table}
         self.cursor.execute(stmt, (docid, docid))
 
@@ -223,38 +225,58 @@ class PGTextIndex(Persistent):
             'table': self.table,
             'weight': '',
             'not': '',
-            'filter_clause': '',
+            'filter': '',
+            'limit': '',
+            'offset': '',
         }
+
         if invert:
             kw['not'] = 'NOT'
 
         if IWeightedQuery.providedBy(query):
             kw['weight'] = "'{%s, %s, %s, %s}', "
-            params = (
-                query.D,
-                query.C,
-                query.B,
-                query.A,
+            text = getattr(query, 'text', None)
+            if text is None:
+                text = '%s' % query  # Use __str__()
+            params = [
+                getattr(query, 'D', 0.1),
+                getattr(query, 'C', 0.2),
+                getattr(query, 'B', 0.4),
+                getattr(query, 'A', 1.0),
                 self.ts_config,
-                convert_query(query.text),
-            )
+                convert_query(text),
+            ]
+            marker = getattr(query, 'marker', None)
+            if marker:
+                kw['filter'] += " AND marker = %s"
+                params.append(marker)
+            limit = getattr(query, 'limit', None)
+            if limit:
+                kw['limit'] = "LIMIT %s"
+                params.append(limit)
+            offset = getattr(query, 'offset', None)
+            if offset:
+                kw['offset'] = "OFFSET %s"
+                params.append(offset)
         else:
             params = (self.ts_config, convert_query(query))
 
         if docids is not None:
             docidstr = ','.join(str(docid) for docid in docids)
-            kw['filter_clause'] = 'AND docid IN (%s)' % docidstr
+            kw['filter'] += ' AND docid IN (%s)' % docidstr
 
         stmt = """
         SELECT docid,
             coefficient * ts_rank_cd(%(weight)stext_vector, query) AS rank
         FROM %(table)s, to_tsquery(%%s, %%s) query
         WHERE %(not)s(text_vector @@ query)
-        %(filter_clause)s
+        %(filter)s
         ORDER BY rank DESC
+        %(limit)s
+        %(offset)s
         """ % kw
         cursor = self.cursor
-        cursor.execute(stmt, params)
+        cursor.execute(stmt, tuple(params))
         return cursor
 
     def applyContains(self, query):
@@ -275,12 +297,8 @@ class PGTextIndex(Persistent):
     applyNotEq = applyDoesNotContain
 
     def docids(self):
-        """
-        Return all docids in the index.
-        """
-        stmt = """
-        SELECT docid FROM %s
-        """ % self.table
+        """Return all docids in the index."""
+        stmt = "SELECT docid FROM %s" % self.table
         cursor = self.cursor
         cursor.execute(stmt)
         res = self.family.IF.Set()

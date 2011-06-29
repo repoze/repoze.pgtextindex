@@ -4,7 +4,7 @@ from zope.interface import Interface
 
 
 class IWeightedText(Interface):
-    """An indexable text value with weighted components.
+    """An indexable text value with optional weighted components.
 
     Applications can return an object that implements this interface
     from the discriminator function attached to a PGTextIndex.
@@ -53,21 +53,52 @@ class IWeightedText(Interface):
     default coefficient is 1.
     """)
 
+    marker = Attribute("Optional: a string marker value.")
+
 
 class IWeightedQuery(Interface):
-    """A text query that controls text weights.
-
-    Note that this interface is less important than IWeightedText.
-    Applications should implement IWeightedText first, then only use
-    IWeightedQuery for fine tuning the weights.
+    """A text query that optionally controls text weights and filtering.
     """
 
-    text = Attribute("Required: the human-provided query text.")
+    def __str__():
+        """Required: the human-provided query text.
 
-    A = Attribute("Required: the weight to apply to A text.")
+        The text will be assigned the D weight.
+        """
 
-    B = Attribute("Required: the weight to apply to B text.")
+    text = Attribute(
+        """Optional, deprecated: the human-provided query text.
 
-    C = Attribute("Required: the weight to apply to C text.")
+        This takes precedence over __str__() when it is provided.
+        """)
 
-    D = Attribute("Required: the weight to apply to D (default) text.")
+    A = Attribute("Optional: the weight to apply to A text, default 1.0.")
+
+    B = Attribute("Optional: the weight to apply to B text, default 0.4.")
+
+    C = Attribute("Optional: the weight to apply to C text, default 0.2.")
+
+    D = Attribute(
+        "Optional: the weight to apply to D (default) text, default 0.1.")
+
+    marker = Attribute(
+        """Optional: find only documents with the given marker value.
+
+        If empty or missing, the search is not constrained by markers.
+        """)
+
+    limit = Attribute(
+        """Optional: limit the number of documents returned.
+
+        This is more efficient than asking repoze.catalog to limit the
+        number of results because this method gives PostgreSQL a chance
+        to employ more query optimizations. It also reduces the amount
+        of data sent by PostgreSQL in response to a query.
+        """)
+
+    offset = Attribute(
+        """Optional: skip the specified number of rows in the result set.
+
+        Used for paging/batching. The limit and offset attributes are normally
+        used together.
+        """)
