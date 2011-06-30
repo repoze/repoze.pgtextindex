@@ -46,7 +46,7 @@ Usage
         dsn,
         table='pgtextindex',
         ts_config='english',
-        drop_and_create=True)
+        drop_and_create=False)
 
 The arguments to the constructor are as follows:
 
@@ -70,7 +70,7 @@ The arguments to the constructor are as follows:
 
 ``drop_and_create``
         If `True` the table and index used will dropped (if it exists) and
-        (re)created.  The default is `True`.
+        (re)created.  The default is `False`.
 
 .. _`repoze.catalog documentation`: http://docs.repoze.org/catalog/
 
