@@ -1,11 +1,14 @@
-Unreleased
-==========
+0.3 (2011-06-30)
+================
 
 - Fixed PostgreSQL ProgrammingError when query string contains a backslash
   character.  (LP #798725)
 
 - Added ability to mark content with arbitrary markers which can be used as 
   discriminators at query time.  (LP #792334)
+
+- Support searches for words containing an apostrophe.  (LP #801265)
+
 
 0.2 (2011-06-15)
 ================
@@ -31,6 +34,7 @@ Unreleased
   methods to the index.
 
 - Compatability with repoze.catalog 0.8.0.
+
 
 0.1 (2011-01-20)
 ================

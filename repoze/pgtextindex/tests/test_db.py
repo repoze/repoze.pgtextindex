@@ -73,8 +73,16 @@ class TestPostgresConnectionManager(unittest.TestCase):
         self.assertEqual(cm.connection.isolation_level,
             psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
 
-    def test_cursor_attr(self):
+    def test_cursor_attr_before_join(self):
         cm = self._make_one()
+        self.assertFalse(cm._joined)
+        self.assertEqual(cm.cursor.connection.dsn, "dbname=dummy")
+        self.assertTrue(cm._joined)
+
+    def test_cursor_attr_after_join(self):
+        cm = self._make_one()
+        cm.cursor
+        self.assertTrue(cm._joined)
         self.assertEqual(cm.cursor.connection.dsn, "dbname=dummy")
 
     def test_join_when_getting_cursor(self):

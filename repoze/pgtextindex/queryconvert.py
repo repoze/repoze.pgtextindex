@@ -35,7 +35,7 @@ class ParseTreeEncoder:
         if not isinstance(value, basestring):
             value = ' '.join(value)
         res = remove_special_chars(value)
-        res = res.replace('\\', '\\\\')
+        res = res.replace('\\', '\\\\').replace("'", "''")
         return res
 
     def encode_ATOM(self, node):

@@ -405,7 +405,7 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertTrue(isinstance(res, index.family.IF.Bucket))
         self.assertEqual(len(res), 2)
 
-    def test_apply_weighted_query(self):
+    def test_apply_weighted_query_normal(self):
         index = self._make_one()
         index.cursor.executed = executed = []
 
@@ -432,6 +432,37 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params,
             (1, 16, 256, 4096, 'english', "( 'Waldo' ) & ( 'Wally' )"))
+        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(len(res), 2)
+
+    def test_apply_weighted_query_with_deprecated_text_method(self):
+        index = self._make_one()
+        index.cursor.executed = executed = []
+
+        from zope.interface import implements
+        from repoze.pgtextindex.interfaces import IWeightedQuery
+
+        class DummyWeightedQuery(unicode):
+            implements(IWeightedQuery)
+            A = 16 ** 3
+            B = 16 ** 2
+            C = 16
+            D = 1
+            text = 'Surly Susan'
+
+        q = DummyWeightedQuery('Waldo Wally')
+        res = index.apply(q)
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'SELECT docid,',
+            "coefficient * ts_rank_cd('{%s, %s, %s, %s}', "
+                "text_vector, query) AS rank",
+            'FROM pgtextindex, to_tsquery(%s, %s) query',
+            'WHERE (text_vector @@ query)',
+            'ORDER BY rank DESC',
+        ])
+        self.assertEqual(params,
+            (1, 16, 256, 4096, 'english', "( 'Surly' ) & ( 'Susan' )"))
         self.assertTrue(isinstance(res, index.family.IF.Bucket))
         self.assertEqual(len(res), 2)
 

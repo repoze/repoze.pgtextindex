@@ -269,6 +269,5 @@ def remove_special_chars(s):
     """Remove characters that have a special meaning to the query parser."""
     if not s:
         return s
-    s = s.replace("'", "").replace('"', '')
-    s = s.replace('*', '').replace('?', '')
+    s = s.replace('"', '').replace('*', '').replace('?', '')
     return s

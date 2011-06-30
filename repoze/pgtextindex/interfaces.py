@@ -6,6 +6,8 @@ from zope.interface import Interface
 class IWeightedText(Interface):
     """An indexable text value with optional weighted components.
 
+    This interface can be implemented by a subclass of unicode.
+
     Applications can return an object that implements this interface
     from the discriminator function attached to a PGTextIndex.
 
@@ -58,6 +60,8 @@ class IWeightedText(Interface):
 
 class IWeightedQuery(Interface):
     """A text query that optionally controls text weights and filtering.
+
+    This interface can be implemented by a subclass of unicode.
     """
 
     def __str__():
@@ -67,7 +71,7 @@ class IWeightedQuery(Interface):
         """
 
     text = Attribute(
-        """Optional, deprecated: the human-provided query text.
+        """Deprecated: the human-provided query text.
 
         This takes precedence over __str__() when it is provided.
         """)

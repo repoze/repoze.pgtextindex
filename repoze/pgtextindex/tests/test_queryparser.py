@@ -272,8 +272,9 @@ class TestQueryParser(TestQueryParserBase):
         from zope.index.text.parsetree import AtomNode
         parser = self._makeOne()
         self._expect(parser, "foo ' bar",
-                     AndNode([AtomNode("foo"), AtomNode("bar")]),
-                     expected_ignored=["'"])
+                     AndNode([AtomNode("foo"), AtomNode("'"),
+                     AtomNode("bar")]),
+                     expected_ignored=[])
 
     def test_lone_quote(self):
         from zope.index.text.parsetree import AndNode
@@ -313,6 +314,12 @@ class TestQueryParser(TestQueryParserBase):
         parser = self._makeOne()
         self._expect(parser, '"foo bar* * baz"',
                      PhraseNode(['foo', 'bar*', 'baz']))
+
+    def test_word_with_apostrophe(self):
+        from zope.index.text.parsetree import AndNode
+        from zope.index.text.parsetree import AtomNode
+        parser = self._makeOne()
+        self._expect(parser, "O'Donnell", AtomNode("O'Donnell"))
 
     def test101(self):
         parser = self._makeOne()

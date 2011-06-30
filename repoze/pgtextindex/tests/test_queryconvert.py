@@ -39,6 +39,12 @@ class TestConvertQuery(unittest.TestCase):
     def test_glob(self):
         self.assertEqual(self._call('stuff*'), "'stuff':*")
 
+    def test_word_with_backslash(self):
+        self.assertEqual(self._call("more\\"), "'more\\\\'")
+
+    def test_word_with_apostrophe(self):
+        self.assertEqual(self._call("O'Malley"), "'O''Malley'")
+
 
 def test_suite():
     return unittest.TestSuite((
