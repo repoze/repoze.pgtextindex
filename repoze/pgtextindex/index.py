@@ -155,12 +155,13 @@ class PGTextIndex(Persistent):
             text = '%s' % value  # Call the __str__() method
             if text:
                 clauses.append('to_tsvector(%s, %s)')
-                params.extend([self.ts_config, text])
+                params.extend([self.ts_config, _truncate(text)])
             for weight in ('A', 'B', 'C'):
                 text = getattr(value, weight, None)
                 if text:
                     clauses.append('setweight(to_tsvector(%s, %s), %s)')
-                    params.extend([self.ts_config, '%s' % text, weight])
+                    params.extend([self.ts_config, _truncate('%s' % text),
+                                   weight])
 
         else:
             # The value is a simple string.  Strings can not
@@ -168,7 +169,7 @@ class PGTextIndex(Persistent):
             params = [docid, docid, 1.0, None]
             if value:
                 clauses.append('to_tsvector(%s, %s)')
-                params.extend([self.ts_config, '%s' % value])
+                params.extend([self.ts_config, _truncate('%s' % value)])
 
         if len(params) > 4:
             clause = ' || '.join(clauses)
@@ -456,6 +457,21 @@ def _mp_release_resources(jar):
                 close()
         del jar.foreign_connections
     jar._release_resources = _release_resources
+
+
+def _truncate(text):
+    """
+    PostgreSQL can't handle ts_vectors that are 1MB or larger.
+    """
+    MAXLEN = 1048575
+    l = len(text)
+    if l <= MAXLEN:
+        return text
+
+    trunc = MAXLEN
+    while text[trunc].isalnum():
+        trunc -= 1
+    return text[:trunc]
 
 
 class SimpleWeightedText(object):

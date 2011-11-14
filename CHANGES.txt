@@ -1,7 +1,8 @@
 Next Release
 ============
 
-- ...
+- Truncate text to 1MB per document in order to stay under (silly) limit 
+  imposed by PostgreSQL.
 
 
 0.3 (2011-06-30)

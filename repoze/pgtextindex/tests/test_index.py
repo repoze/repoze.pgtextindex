@@ -143,6 +143,22 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params, (5, 5, 1.0, None, 'english', 'Waldo'))
 
+    def test_index_doc_unweighted_long(self):
+        text = 'Waldo ' * 174763 # Over 1MB
+        index = self._make_one()
+        index.cursor.executed = executed = []
+        index.index_doc(5, text)
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'LOCK pgtextindex IN EXCLUSIVE MODE;',
+            'DELETE FROM pgtextindex WHERE docid = %s;',
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, %s, %s, to_tsvector(%s, %s))',
+        ])
+        self.assertEqual(
+            params, (5, 5, 1.0, None, 'english', text[:1048571]))
+
     def test_index_doc_using_attr_discriminator(self):
         class DummyObject:
             name = 'Osvaldo'
@@ -216,6 +232,26 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(params, (5, 5, 1.0, None,
             'english', 'character',
             'english', 'Waldo', 'A',
+        ))
+
+    def test_index_doc_use_one_weight_long(self):
+        text1 = 'Waldo ' * 174763 # Over 1MB
+        text2 = 'Baldo ' * 174763 # Over 1MB
+        index = self._make_one()
+        index.cursor.executed = executed = []
+        index.index_doc(5, [text1, text2])
+        lines, params = self._format_executed(executed)
+        self.assertEqual(lines, [
+            'LOCK pgtextindex IN EXCLUSIVE MODE;',
+            'DELETE FROM pgtextindex WHERE docid = %s;',
+            'INSERT INTO pgtextindex '
+                '(docid, coefficient, marker, text_vector)',
+            'VALUES (%s, %s, %s, to_tsvector(%s, %s) || '
+                'setweight(to_tsvector(%s, %s), %s))',
+        ])
+        self.assertEqual(params, (5, 5, 1.0, None,
+            'english', text2[:1048571],
+            'english', text1[:1048571], 'A',
         ))
 
     def test_index_doc_use_more_than_all_possible_weights(self):
