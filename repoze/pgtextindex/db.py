@@ -33,7 +33,7 @@ class PostgresConnectionManager(object):
         if c is None:
             c = self.module.connect(self.dsn)
             c.set_isolation_level(
-                psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
+                psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
             self._connection = c
         return c
 

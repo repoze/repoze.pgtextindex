@@ -71,7 +71,7 @@ class TestPostgresConnectionManager(unittest.TestCase):
         cm = self._make_one()
         self.assertEqual(cm.connection.dsn, "dbname=dummy")
         self.assertEqual(cm.connection.isolation_level,
-            psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
+            psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
 
     def test_cursor_attr_before_join(self):
         cm = self._make_one()

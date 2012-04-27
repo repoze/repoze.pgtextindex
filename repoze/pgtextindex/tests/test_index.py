@@ -93,7 +93,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(6, None)
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -107,7 +106,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(6, '')
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -121,7 +119,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(6, [['', ''], ''])
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -135,7 +132,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(5, 'Waldo')
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -150,7 +146,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(5, text)
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -168,7 +163,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(6, DummyObject())
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -185,7 +179,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(6, 'dummy')
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -208,7 +201,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(6, DummyObject())
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -222,7 +214,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(5, ['Waldo', 'character'])
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -242,7 +233,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(5, [text1, text2])
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -260,7 +250,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(5, ['Waldo', 'character', 'boy', 'person', 'entity'])
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -282,7 +271,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(5, ['Waldo', '', 'boy', ''])
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -308,7 +296,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(5, DummyText('Where is Waldo'))
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -323,7 +310,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.index_doc(5, [['Waldo', 'Wally'], ''])
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',
@@ -339,9 +325,7 @@ class TestPGTextIndex(unittest.TestCase):
         index.unindex_doc(7)
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
-            'DELETE FROM pgtextindex',
-            'WHERE docid = %s',
+            'DELETE FROM pgtextindex WHERE docid = %s',
         ])
         self.assertEqual(params, (7,))
 
@@ -351,7 +335,6 @@ class TestPGTextIndex(unittest.TestCase):
         index.clear()
         lines, params = self._format_executed(executed)
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex',
         ])
         self.assertEqual(params, None)
@@ -730,8 +713,8 @@ class TestPGTextIndex(unittest.TestCase):
         index = self._make_one()
         index.cursor.executed = executed = []
         index.cursor.results = [(5,), (6,)]
-        all = index.family.IF.Set([5, 6, 7])
-        index._migrate_to_0_8_0(all)
+        all_docids = index.family.IF.Set([5, 6, 7])
+        index._migrate_to_0_8_0(all_docids)
         self.assertEqual(len(executed), 2)
         lines, params = self._format_executed([executed[0]])
         self.assertEqual(lines, [
@@ -740,7 +723,6 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(params, None)
         lines, params = self._format_executed([executed[1]])
         self.assertEqual(lines, [
-            'LOCK pgtextindex IN EXCLUSIVE MODE;',
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
                 '(docid, coefficient, marker, text_vector)',

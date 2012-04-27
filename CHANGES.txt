@@ -1,7 +1,18 @@
+0.5 (2012-04-27)
+================
+
+- Switched to read committed isolation and removed explicit locking.
+  The explicit locking was reducing write performance and may have been
+  interfering with autovacuum.  This change raises the probability
+  of temporary inconsistency, but since this package did not provide
+  ACID compliance anyway, developers already need to be prepared for
+  temporary inconsistency.
+
+
 0.4 (2011-11-18)
 ================
 
-- Truncate text to 1MB per document in order to stay under (silly) limit 
+- Truncate text to 1MB per document in order to stay under (silly) limit
   imposed by PostgreSQL.
 
 
@@ -11,7 +22,7 @@
 - Fixed PostgreSQL ProgrammingError when query string contains a backslash
   character.  (LP #798725)
 
-- Added ability to mark content with arbitrary markers which can be used as 
+- Added ability to mark content with arbitrary markers which can be used as
   discriminators at query time.  (LP #792334)
 
 - Support searches for words containing an apostrophe.  (LP #801265)

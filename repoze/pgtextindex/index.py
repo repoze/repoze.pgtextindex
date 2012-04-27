@@ -174,7 +174,6 @@ class PGTextIndex(Persistent):
         if len(params) > 4:
             clause = ' || '.join(clauses)
             stmt = """
-            LOCK %(table)s IN EXCLUSIVE MODE;
             DELETE FROM %(table)s WHERE docid = %%s;
             INSERT INTO %(table)s (docid, coefficient, marker, text_vector)
             VALUES (%%s, %%s, %%s, %(clause)s)
@@ -188,7 +187,6 @@ class PGTextIndex(Persistent):
 
     def _index_null(self, docid):
         stmt = """
-        LOCK %(table)s IN EXCLUSIVE MODE;
         DELETE FROM %(table)s WHERE docid = %%s;
         INSERT INTO %(table)s (docid, coefficient, marker, text_vector)
         VALUES (%%s, 0.0, null, null)
@@ -205,20 +203,13 @@ class PGTextIndex(Persistent):
         This call is a no-op if the docid isn't in the index, however,
         after this call, the index should have no references to the docid.
         """
-        stmt = """
-        LOCK %(table)s IN EXCLUSIVE MODE;
-        DELETE FROM %(table)s
-        WHERE docid = %%s
-        """ % self._subs
+        stmt = "DELETE FROM %(table)s WHERE docid = %%s" % self._subs
         self.cursor.execute(stmt, (docid,))
 
     def clear(self):
         """Unindex all documents indexed by the index
         """
-        stmt = """
-        LOCK %(table)s IN EXCLUSIVE MODE;
-        DELETE FROM %(table)s
-        """ % self._subs
+        stmt = "DELETE FROM %(table)s" % self._subs
         self.cursor.execute(stmt)
 
     def _run_query(self, query, invert=False, docids=None):
@@ -294,7 +285,7 @@ class PGTextIndex(Persistent):
         res.update(data)
         return res
 
-    apply = applyEq = applyContains
+    apply = applyEq = applyContains  # @ReservedAssignment
     applyNotEq = applyDoesNotContain
 
     def docids(self):
