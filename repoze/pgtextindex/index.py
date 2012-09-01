@@ -1,4 +1,5 @@
 
+from perfmetrics import metricmethod
 from persistent import Persistent
 from repoze.catalog.interfaces import ICatalogIndex
 from repoze.pgtextindex.db import PostgresConnectionManager
@@ -8,8 +9,10 @@ from repoze.pgtextindex.queryconvert import convert_query
 from zope.index.interfaces import IIndexSort
 from zope.interface import implements
 import BTrees
-
 import logging
+import psycopg2
+import random
+import time
 
 _missing = object()
 log = logging.getLogger(__name__)
@@ -105,6 +108,7 @@ class PGTextIndex(Persistent):
     def connection(self):
         return self.connection_manager.connection
 
+    @metricmethod
     def index_doc(self, docid, obj):
         """Add a document to the index.
 
@@ -178,8 +182,7 @@ class PGTextIndex(Persistent):
             INSERT INTO %(table)s (docid, coefficient, marker, text_vector)
             VALUES (%%s, %%s, %%s, %(clause)s)
             """ % {'table': self.table, 'clause': clause}
-            self.cursor.execute(stmt, tuple(params))
-
+            self._execute_with_retry(stmt, tuple(params), docid)
         else:
             self._index_null(docid)
 
@@ -191,8 +194,25 @@ class PGTextIndex(Persistent):
         INSERT INTO %(table)s (docid, coefficient, marker, text_vector)
         VALUES (%%s, 0.0, null, null)
         """ % {'table': self.table}
-        self.cursor.execute(stmt, (docid, docid))
+        self._execute_with_retry(stmt, (docid, docid), docid)
 
+    def _execute_with_retry(self, stmt, params, docid):
+        for attempt in (1, 2, 3):
+            try:
+                self.cursor.execute(stmt, params)
+                return
+            except psycopg2.IntegrityError:
+                # Another thread is updating in parallel.
+                # Wait a moment and try again.
+                if attempt >= 3:
+                    raise
+                log.info("Concurrent pgtextindex update on docid %s; "
+                         "retrying.", docid)
+                self.sleep(attempt * random.random())
+
+    sleep = time.sleep
+
+    @metricmethod
     def unindex_doc(self, docid):
         """Remove a document from the index.
 
@@ -212,6 +232,7 @@ class PGTextIndex(Persistent):
         stmt = "DELETE FROM %(table)s" % self._subs
         self.cursor.execute(stmt)
 
+    @metricmethod
     def _run_query(self, query, invert=False, docids=None):
         kw = {
             'table': self.table,
@@ -342,6 +363,7 @@ class PGTextIndex(Persistent):
         res.update(data)
         return res
 
+    @metricmethod
     def sort(self, result, reverse=False, limit=None, sort_type=None):
         """Sort by text relevance.
 

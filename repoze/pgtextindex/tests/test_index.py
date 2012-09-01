@@ -3,21 +3,64 @@ import unittest
 
 class TestPGTextIndex(unittest.TestCase):
 
-    def _get_class(self):
+    @property
+    def _class(self):
         from repoze.pgtextindex.index import PGTextIndex
         return PGTextIndex
 
-    def _make_one(self, discriminator=None, dsn="dbname=dummy", **kw):
+    def _make_one(self, discriminator=None, dsn="dbname=dummy",
+                  results=((5, 1.3), (6, 0.7)), execute_errors=None, **kw):
         if discriminator is None:
             def discriminator(obj, default):
                 return obj
-        return self._get_class()(discriminator, dsn,
+
+        self.executed = executed = []
+        self.commits = commits = []
+        self.rollbacks = rollbacks = []
+        results = list(results)
+
+        class DummyConnectionManager:
+            closed = False
+
+            def __init__(self, dsn):
+                self.dsn = dsn
+                self.connection = DummyConnection()
+                self.cursor = DummyCursor()
+
+            def close(self):
+                self.closed = True
+
+        class DummyConnection:
+            encoding = 'UTF-8'
+
+            def commit(self):
+                commits.append(1)
+
+            def rollback(self):
+                rollbacks.append(1)
+
+        class DummyCursor:
+            def execute(self, stmt, params=None):
+                executed.append((stmt, params))
+                if execute_errors:
+                    error = execute_errors.pop(0)
+                    if error is not None:
+                        raise error
+
+            def __iter__(self):
+                """Return an iterable of (docid, score) tuples"""
+                return iter(results)
+
+            def fetchone(self):
+                return ['one']
+
+        return self._class(discriminator, dsn,
             connection_manager_factory=DummyConnectionManager, **kw)
 
     def test_class_conforms_to_ICatalogIndex(self):
         from zope.interface.verify import verifyClass
         from repoze.catalog.interfaces import ICatalogIndex
-        verifyClass(ICatalogIndex, self._get_class())
+        verifyClass(ICatalogIndex, self._class)
 
     def test_instance_conforms_to_ICatalogIndex(self):
         from zope.interface.verify import verifyObject
@@ -27,7 +70,7 @@ class TestPGTextIndex(unittest.TestCase):
     def test_class_conforms_to_IIndexSort(self):
         from zope.interface.verify import verifyClass
         from zope.index.interfaces import IIndexSort
-        verifyClass(IIndexSort, self._get_class())
+        verifyClass(IIndexSort, self._class)
 
     def test_instance_conforms_to_IIndexSort(self):
         from zope.interface.verify import verifyObject
@@ -89,9 +132,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_none(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.index_doc(6, None)
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -102,9 +144,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_empty_string(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.index_doc(6, '')
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -115,9 +156,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_empty_strings_weighted(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.index_doc(6, [['', ''], ''])
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -128,9 +168,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_unweighted(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.index_doc(5, 'Waldo')
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -142,9 +181,8 @@ class TestPGTextIndex(unittest.TestCase):
     def test_index_doc_unweighted_long(self):
         text = 'Waldo ' * 174763 # Over 1MB
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.index_doc(5, text)
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -159,9 +197,8 @@ class TestPGTextIndex(unittest.TestCase):
             name = 'Osvaldo'
 
         index = self._make_one('name')
-        index.cursor.executed = executed = []
         index.index_doc(6, DummyObject())
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -175,9 +212,8 @@ class TestPGTextIndex(unittest.TestCase):
             return default
 
         index = self._make_one(discriminator)
-        index.cursor.executed = executed = []
         index.index_doc(6, 'dummy')
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -197,9 +233,8 @@ class TestPGTextIndex(unittest.TestCase):
                 return 'x'
 
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.index_doc(6, DummyObject())
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -210,9 +245,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_use_one_weight(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.index_doc(5, ['Waldo', 'character'])
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -229,9 +263,8 @@ class TestPGTextIndex(unittest.TestCase):
         text1 = 'Waldo ' * 174763 # Over 1MB
         text2 = 'Baldo ' * 174763 # Over 1MB
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.index_doc(5, [text1, text2])
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -246,9 +279,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_use_more_than_all_possible_weights(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.index_doc(5, ['Waldo', 'character', 'boy', 'person', 'entity'])
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -267,9 +299,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_skip_weights(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.index_doc(5, ['Waldo', '', 'boy', ''])
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -284,7 +315,6 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_with_marker(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
 
         from repoze.pgtextindex.interfaces import IWeightedText
         from zope.interface import implements
@@ -294,7 +324,7 @@ class TestPGTextIndex(unittest.TestCase):
             marker = 'book'
 
         index.index_doc(5, DummyText('Where is Waldo'))
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -306,9 +336,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_index_doc_multiple_texts_with_the_same_weight(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.index_doc(5, [['Waldo', 'Wally'], ''])
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -319,11 +348,37 @@ class TestPGTextIndex(unittest.TestCase):
             'english', "['Waldo', 'Wally']", 'A',
         ))
 
+    def test_index_doc_with_one_integrity_error(self):
+        import psycopg2
+        index = self._make_one(execute_errors=[psycopg2.IntegrityError])
+        sleeps = []
+        index.sleep = sleeps.append
+        index.index_doc(5, 'Waldo')
+        self.assertEqual(len(sleeps), 1)
+        self.assertEqual(len(self.executed), 2)
+        for i in (0, 1):
+            lines, params = self._format_executed(self.executed[i:i + 1])
+            self.assertEqual(lines, [
+                'DELETE FROM pgtextindex WHERE docid = %s;',
+                'INSERT INTO pgtextindex '
+                    '(docid, coefficient, marker, text_vector)',
+                'VALUES (%s, %s, %s, to_tsvector(%s, %s))',
+            ])
+            self.assertEqual(params, (5, 5, 1.0, None, 'english', 'Waldo'))
+
+    def test_index_doc_with_three_integrity_errors(self):
+        import psycopg2
+        index = self._make_one(execute_errors=[psycopg2.IntegrityError] * 3)
+        sleeps = []
+        index.sleep = sleeps.append
+        self.assertRaises(psycopg2.IntegrityError, index.index_doc, 5, 'Waldo')
+        self.assertEqual(len(sleeps), 2)
+        self.assertEqual(len(self.executed), 3)
+
     def test_unindex_doc(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.unindex_doc(7)
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s',
         ])
@@ -331,9 +386,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_clear(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         index.clear()
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex',
         ])
@@ -341,9 +395,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_apply_simple(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         res = index.apply('Waldo Wally')
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT docid,',
             'coefficient * ts_rank_cd(text_vector, query) AS rank',
@@ -358,9 +411,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_applyEq(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         res = index.applyEq('Waldo Wally')
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT docid,',
             'coefficient * ts_rank_cd(text_vector, query) AS rank',
@@ -375,9 +427,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_applyContains(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         res = index.applyContains('Waldo Wally')
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT docid,',
             'coefficient * ts_rank_cd(text_vector, query) AS rank',
@@ -392,9 +443,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_applyNotEq(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         res = index.applyNotEq('Waldo Wally')
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT docid,',
             'coefficient * ts_rank_cd(text_vector, query) AS rank',
@@ -409,9 +459,8 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_applyDoesNotContain(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         res = index.applyDoesNotContain('Waldo Wally')
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT docid,',
             'coefficient * ts_rank_cd(text_vector, query) AS rank',
@@ -426,7 +475,6 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_apply_weighted_query_normal(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
 
         from zope.interface import implements
         from repoze.pgtextindex.interfaces import IWeightedQuery
@@ -440,7 +488,7 @@ class TestPGTextIndex(unittest.TestCase):
 
         q = DummyWeightedQuery('Waldo Wally')
         res = index.apply(q)
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT docid,',
             "coefficient * ts_rank_cd('{%s, %s, %s, %s}', "
@@ -456,7 +504,6 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_apply_weighted_query_with_deprecated_text_method(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
 
         from zope.interface import implements
         from repoze.pgtextindex.interfaces import IWeightedQuery
@@ -471,7 +518,7 @@ class TestPGTextIndex(unittest.TestCase):
 
         q = DummyWeightedQuery('Waldo Wally')
         res = index.apply(q)
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT docid,',
             "coefficient * ts_rank_cd('{%s, %s, %s, %s}', "
@@ -487,7 +534,6 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_apply_with_marker(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
 
         from zope.interface import implements
         from repoze.pgtextindex.interfaces import IWeightedQuery
@@ -498,7 +544,7 @@ class TestPGTextIndex(unittest.TestCase):
 
         q = DummyWeightedQuery('Waldo Wally')
         res = index.apply(q)
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT docid,',
             "coefficient * ts_rank_cd('{%s, %s, %s, %s}', "
@@ -516,7 +562,6 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_apply_with_limit_and_offset(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
 
         from zope.interface import implements
         from repoze.pgtextindex.interfaces import IWeightedQuery
@@ -528,7 +573,7 @@ class TestPGTextIndex(unittest.TestCase):
 
         q = DummyWeightedQuery('Waldo Wally')
         res = index.apply(q)
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT docid,',
             "coefficient * ts_rank_cd('{%s, %s, %s, %s}', "
@@ -547,7 +592,6 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_apply_with_all_weight_and_limit_features(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
 
         from zope.interface import implements
         from repoze.pgtextindex.interfaces import IWeightedQuery
@@ -564,7 +608,7 @@ class TestPGTextIndex(unittest.TestCase):
 
         q = DummyWeightedQuery('Waldo Wally')
         res = index.apply(q)
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT docid,',
             "coefficient * ts_rank_cd('{%s, %s, %s, %s}', "
@@ -583,11 +627,9 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(len(res), 2)
 
     def test_docids(self):
-        index = self._make_one()
-        index.cursor.executed = executed = []
-        index.cursor.results = [(5,), (6,)]
+        index = self._make_one(results=((5,), (6,)))
         res = index.docids()
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT docid FROM pgtextindex',
         ])
@@ -595,21 +637,19 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertTrue(isinstance(res, index.family.IF.Set))
         self.assertEqual(len(res), 2)
 
-    def test_apply_intersect_no_docids(self):
+    def test_apply_intersect_with_no_docids(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         res = index.apply_intersect('Waldo', [])
         self.assertTrue(isinstance(res, index.family.IF.Bucket))
         self.assertEqual(len(res), 0)
-        self.assertEqual(len(executed), 0)
+        self.assertEqual(len(self.executed), 0)
 
     def test_apply_intersect_with_docids(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         res = index.apply_intersect('Waldo', [8,6,7])
         self.assertTrue(isinstance(res, index.family.IF.Bucket))
         self.assertEqual(len(res), 2)
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT docid,',
             'coefficient * ts_rank_cd(text_vector, query) AS rank',
@@ -621,11 +661,9 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(params, ('english', "'Waldo'"))
 
     def test_get_contextual_summary(self):
-        index = self._make_one()
-        index.cursor.executed = executed = []
-        index.cursor.results = [('<b>query</b>',)]
+        index = self._make_one(results=[('<b>query</b>',)])
         res = index.get_contextual_summary('raw text', 'query', foo='bar')
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT ts_headline(%s, doc.text, to_tsquery(%s, %s), %s)',
             'FROM (VALUES (%s)) AS doc (text)',
@@ -635,12 +673,10 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertEqual(res, '<b>query</b>')
 
     def test_get_two_contextual_summaries(self):
-        index = self._make_one()
-        index.cursor.executed = executed = []
-        index.cursor.results = [('<b>query</b>',), ('<b>word</b>',)]
+        index = self._make_one(results=[('<b>query</b>',), ('<b>word</b>',)])
         raw_texts = ['raw 1', 'raw 2']
         res = index.get_contextual_summaries(raw_texts, 'query', foo='bar')
-        lines, params = self._format_executed(executed)
+        lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
             'SELECT ts_headline(%s, doc.text, to_tsquery(%s, %s), %s)',
             'FROM (VALUES (%s), (%s)) AS doc (text)',
@@ -651,10 +687,9 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_get_zero_contextual_summaries(self):
         index = self._make_one()
-        index.cursor.executed = executed = []
         raw_texts = []
         res = index.get_contextual_summaries(raw_texts, 'query', foo='bar')
-        self.assertFalse(executed)
+        self.assertFalse(self.executed)
         self.assertEqual(res, [])
 
     def test_sort_nothing(self):
@@ -710,18 +745,16 @@ class TestPGTextIndex(unittest.TestCase):
             self.assertRaises(NotImplementedError, method, 'foo')
 
     def test_migrate_to_0_8_0(self):
-        index = self._make_one()
-        index.cursor.executed = executed = []
-        index.cursor.results = [(5,), (6,)]
+        index = self._make_one(results=[(5,), (6,)])
         all_docids = index.family.IF.Set([5, 6, 7])
         index._migrate_to_0_8_0(all_docids)
-        self.assertEqual(len(executed), 2)
-        lines, params = self._format_executed([executed[0]])
+        self.assertEqual(len(self.executed), 2)
+        lines, params = self._format_executed([self.executed[0]])
         self.assertEqual(lines, [
             'SELECT docid FROM pgtextindex',
         ])
         self.assertEqual(params, None)
-        lines, params = self._format_executed([executed[1]])
+        lines, params = self._format_executed([self.executed[1]])
         self.assertEqual(lines, [
             'DELETE FROM pgtextindex WHERE docid = %s;',
             'INSERT INTO pgtextindex '
@@ -729,45 +762,3 @@ class TestPGTextIndex(unittest.TestCase):
             'VALUES (%s, 0.0, null, null)',
         ])
         self.assertEqual(params, (7, 7))
-
-
-class DummyConnectionManager:
-    closed = False
-
-    def __init__(self, dsn):
-        self.dsn = dsn
-        self.connection = DummyConnection()
-        self.cursor = DummyCursor()
-
-    def close(self):
-        self.closed = True
-
-
-class DummyConnection:
-    encoding = 'UTF-8'
-
-    def __init__(self):
-        self.commits = 0
-        self.rollbacks = 0
-
-    def commit(self):
-        self.commits += 1
-
-    def rollback(self):
-        self.rollbacks += 1
-
-
-class DummyCursor:
-    def __init__(self):
-        self.executed = []
-        self.results = [(5, 1.3), (6, 0.7)]
-
-    def execute(self, stmt, params=None):
-        self.executed.append((stmt, params))
-
-    def __iter__(self):
-        """Return an iterable of (docid, score) tuples"""
-        return iter(self.results)
-
-    def fetchone(self):
-        return ['one']

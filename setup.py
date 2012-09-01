@@ -1,11 +1,12 @@
 
-__version__ = '0.5'
+__version__ = '1.0'
 
 import os
 from setuptools import setup, find_packages
 
 requires = [
     'setuptools',
+    'perfmetrics',
     'psycopg2',
     'repoze.catalog',
     'transaction',
@@ -20,7 +21,7 @@ CHANGES = open(os.path.join(here, 'CHANGES.txt')).read()
 setup(
     name='repoze.pgtextindex',
     version=__version__,
-    description="Text index for repoze.catalog based on PostgreSQL 8.4",
+    description="Text index for repoze.catalog based on PostgreSQL 8.4+",
     long_description=README + '\n\n' +  CHANGES,
     # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
     classifiers=[
