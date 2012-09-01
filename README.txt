@@ -51,8 +51,8 @@ Usage
 The arguments to the constructor are as follows:
 
 ``discriminator``
-        The ``repoze.catalog`` discrminator for this index.  For more
-        information on discrminators see the `repoze.catalog documentation`_.
+        The ``repoze.catalog`` discriminator for this index.  For more
+        information on discriminators see the `repoze.catalog documentation`_.
         This argument is required.
 
 ``dsn``
