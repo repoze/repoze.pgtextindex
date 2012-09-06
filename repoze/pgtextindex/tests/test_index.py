@@ -9,7 +9,8 @@ class TestPGTextIndex(unittest.TestCase):
         return PGTextIndex
 
     def _make_one(self, discriminator=None, dsn="dbname=dummy",
-                  results=((5, 1.3), (6, 0.7)), execute_errors=None, **kw):
+                  results=((5, 1.3), (6, 0.7)), execute_errors=None,
+                  rowcounts=(1,), **kw):
         if discriminator is None:
             def discriminator(obj, default):
                 return obj
@@ -18,6 +19,7 @@ class TestPGTextIndex(unittest.TestCase):
         self.commits = commits = []
         self.rollbacks = rollbacks = []
         results = list(results)
+        rowcounts = list(rowcounts)
 
         class DummyConnectionManager:
             closed = False
@@ -46,6 +48,10 @@ class TestPGTextIndex(unittest.TestCase):
                     error = execute_errors.pop(0)
                     if error is not None:
                         raise error
+                if rowcounts:
+                    self.rowcount = rowcounts.pop(0)
+                else:
+                    self.rowcount = 0
 
             def __iter__(self):
                 """Return an iterable of (docid, score) tuples"""
@@ -134,63 +140,63 @@ class TestPGTextIndex(unittest.TestCase):
         index = self._make_one()
         index.index_doc(6, None)
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, 0.0, null, null)',
-        ])
-        self.assertEqual(params, (6, 6))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=null',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, ('0.0', None, 6))
 
     def test_index_doc_empty_string(self):
         index = self._make_one()
         index.index_doc(6, '')
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, 0.0, null, null)',
-        ])
-        self.assertEqual(params, (6, 6))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=null',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, ('0.0', None, 6))
 
     def test_index_doc_empty_strings_weighted(self):
         index = self._make_one()
         index.index_doc(6, [['', ''], ''])
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, %s, %s, setweight(to_tsvector(%s, %s), %s))',
-        ])
-        self.assertEqual(params, (6, 6, 1.0, None, 'english', "['', '']", 'A'))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=setweight(to_tsvector(%s, %s), %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, None, 'english', "['', '']", 'A', 6))
 
     def test_index_doc_unweighted(self):
         index = self._make_one()
         index.index_doc(5, 'Waldo')
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, %s, %s, to_tsvector(%s, %s))',
-        ])
-        self.assertEqual(params, (5, 5, 1.0, None, 'english', 'Waldo'))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=to_tsvector(%s, %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, None, 'english', 'Waldo', 5))
 
     def test_index_doc_unweighted_long(self):
         text = 'Waldo ' * 174763 # Over 1MB
         index = self._make_one()
         index.index_doc(5, text)
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, %s, %s, to_tsvector(%s, %s))',
-        ])
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=to_tsvector(%s, %s)',
+                          'WHERE docid=%s'])
         self.assertEqual(
-            params, (5, 5, 1.0, None, 'english', text[:1048571]))
+            params, (1.0, None, 'english', text[:1048571], 5))
 
     def test_index_doc_using_attr_discriminator(self):
         class DummyObject:
@@ -199,13 +205,13 @@ class TestPGTextIndex(unittest.TestCase):
         index = self._make_one('name')
         index.index_doc(6, DummyObject())
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, %s, %s, to_tsvector(%s, %s))',
-        ])
-        self.assertEqual(params, (6, 6, 1.0, None, 'english', 'Osvaldo'))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=to_tsvector(%s, %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, None, 'english', 'Osvaldo', 6))
 
     def test_index_doc_missing_value(self):
         def discriminator(obj, default):
@@ -214,13 +220,13 @@ class TestPGTextIndex(unittest.TestCase):
         index = self._make_one(discriminator)
         index.index_doc(6, 'dummy')
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, 0.0, null, null)',
-        ])
-        self.assertEqual(params, (6, 6))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=null',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, ('0.0', None, 6))
 
     def test_index_doc_persistent_object(self):
         # Unlike other indexes, PGTextIndex allows persistent objects
@@ -235,29 +241,29 @@ class TestPGTextIndex(unittest.TestCase):
         index = self._make_one()
         index.index_doc(6, DummyObject())
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, %s, %s, to_tsvector(%s, %s))',
-        ])
-        self.assertEqual(params, (6, 6, 1.0, None, 'english', 'x'))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=to_tsvector(%s, %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, None, 'english', 'x', 6))
 
     def test_index_doc_use_one_weight(self):
         index = self._make_one()
         index.index_doc(5, ['Waldo', 'character'])
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, %s, %s, to_tsvector(%s, %s) || '
-                'setweight(to_tsvector(%s, %s), %s))',
-        ])
-        self.assertEqual(params, (5, 5, 1.0, None,
-            'english', 'character',
-            'english', 'Waldo', 'A',
-        ))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=to_tsvector(%s, %s) || '
+                          'setweight(to_tsvector(%s, %s), %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, None,
+                                  'english', 'character',
+                                  'english', 'Waldo', 'A',
+                                  5))
 
     def test_index_doc_use_one_weight_long(self):
         text1 = 'Waldo ' * 174763 # Over 1MB
@@ -265,53 +271,53 @@ class TestPGTextIndex(unittest.TestCase):
         index = self._make_one()
         index.index_doc(5, [text1, text2])
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, %s, %s, to_tsvector(%s, %s) || '
-                'setweight(to_tsvector(%s, %s), %s))',
-        ])
-        self.assertEqual(params, (5, 5, 1.0, None,
-            'english', text2[:1048571],
-            'english', text1[:1048571], 'A',
-        ))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=to_tsvector(%s, %s) || '
+                          'setweight(to_tsvector(%s, %s), %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, None,
+                                  'english', text2[:1048571],
+                                  'english', text1[:1048571], 'A',
+                                  5))
 
     def test_index_doc_use_more_than_all_possible_weights(self):
         index = self._make_one()
         index.index_doc(5, ['Waldo', 'character', 'boy', 'person', 'entity'])
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, %s, %s, to_tsvector(%s, %s) || '
-                'setweight(to_tsvector(%s, %s), %s) || '
-                'setweight(to_tsvector(%s, %s), %s) || '
-                'setweight(to_tsvector(%s, %s), %s))',
-        ])
-        self.assertEqual(params, (5, 5, 1.0, None,
-            'english', 'person entity',
-            'english', 'Waldo', 'A',
-            'english', 'character', 'B',
-            'english', 'boy', 'C',
-        ))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=to_tsvector(%s, %s) || '
+                              'setweight(to_tsvector(%s, %s), %s) || '
+                              'setweight(to_tsvector(%s, %s), %s) || '
+                              'setweight(to_tsvector(%s, %s), %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, None,
+                                  'english', 'person entity',
+                                  'english', 'Waldo', 'A',
+                                  'english', 'character', 'B',
+                                  'english', 'boy', 'C',
+                                  5))
 
     def test_index_doc_skip_weights(self):
         index = self._make_one()
         index.index_doc(5, ['Waldo', '', 'boy', ''])
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, %s, %s, setweight(to_tsvector(%s, %s), %s) || '
-                'setweight(to_tsvector(%s, %s), %s))',
-        ])
-        self.assertEqual(params, (5, 5, 1.0, None,
-            'english', 'Waldo', 'A',
-            'english', 'boy', 'C',
-        ))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=setweight(to_tsvector(%s, %s), %s) || '
+                              'setweight(to_tsvector(%s, %s), %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, None,
+                                  'english', 'Waldo', 'A',
+                                  'english', 'boy', 'C',
+                                  5))
 
     def test_index_doc_with_marker(self):
         index = self._make_one()
@@ -325,55 +331,118 @@ class TestPGTextIndex(unittest.TestCase):
 
         index.index_doc(5, DummyText('Where is Waldo'))
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, %s, %s, to_tsvector(%s, %s))',
-        ])
-        self.assertEqual(params,
-            (5, 5, 1.0, 'book', 'english', 'Where is Waldo'))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=to_tsvector(%s, %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, 'book', 'english', 'Where is Waldo', 5))
 
     def test_index_doc_multiple_texts_with_the_same_weight(self):
         index = self._make_one()
         index.index_doc(5, [['Waldo', 'Wally'], ''])
         lines, params = self._format_executed(self.executed)
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, %s, %s, setweight(to_tsvector(%s, %s), %s))',
-        ])
-        self.assertEqual(params, (5, 5, 1.0, None,
-            'english', "['Waldo', 'Wally']", 'A',
-        ))
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=setweight(to_tsvector(%s, %s), %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, None,
+                                  'english', "['Waldo', 'Wally']", 'A', 5))
 
-    def test_index_doc_with_one_integrity_error(self):
+    def test_index_doc_using_insert_without_conflict(self):
+        index = self._make_one(rowcounts=())
+        sleeps = []
+        index.sleep = sleeps.append
+        index.index_doc(5, 'Waldo')
+        self.assertEqual(len(sleeps), 0)
+        self.assertEqual(len(self.executed), 3)
+
+        lines, params = self._format_executed(self.executed[0:1])
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=to_tsvector(%s, %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, None, 'english', 'Waldo', 5))
+
+        lines, params = self._format_executed(self.executed[1:2])
+        self.assertEqual(lines,
+                         ['SAVEPOINT pgtextindex_upsert;',
+                          'INSERT INTO pgtextindex '
+                              '(docid, coefficient, marker, text_vector)',
+                          'VALUES (%s, %s, %s, to_tsvector(%s, %s))'])
+        self.assertEqual(params, (5, 1.0, None, 'english', 'Waldo'))
+
+        lines, params = self._format_executed(self.executed[2:3])
+        self.assertEqual(lines, ['RELEASE SAVEPOINT pgtextindex_upsert'])
+        self.assertEqual(params, None)
+
+    def test_index_doc_using_insert_with_one_integrity_error(self):
         import psycopg2
-        index = self._make_one(execute_errors=[psycopg2.IntegrityError])
+        index = self._make_one(execute_errors=[None, psycopg2.IntegrityError,
+                                               None, None],
+                               rowcounts=())
         sleeps = []
         index.sleep = sleeps.append
         index.index_doc(5, 'Waldo')
         self.assertEqual(len(sleeps), 1)
-        self.assertEqual(len(self.executed), 2)
-        for i in (0, 1):
-            lines, params = self._format_executed(self.executed[i:i + 1])
-            self.assertEqual(lines, [
-                'DELETE FROM pgtextindex WHERE docid = %s;',
-                'INSERT INTO pgtextindex '
-                    '(docid, coefficient, marker, text_vector)',
-                'VALUES (%s, %s, %s, to_tsvector(%s, %s))',
-            ])
-            self.assertEqual(params, (5, 5, 1.0, None, 'english', 'Waldo'))
+        self.assertEqual(len(self.executed), 6)
+
+        lines, params = self._format_executed(self.executed[0:1])
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=to_tsvector(%s, %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, None, 'english', 'Waldo', 5))
+
+        lines, params = self._format_executed(self.executed[1:2])
+        self.assertEqual(lines,
+                         ['SAVEPOINT pgtextindex_upsert;',
+                          'INSERT INTO pgtextindex '
+                              '(docid, coefficient, marker, text_vector)',
+                          'VALUES (%s, %s, %s, to_tsvector(%s, %s))'])
+        self.assertEqual(params, (5, 1.0, None, 'english', 'Waldo'))
+
+        lines, params = self._format_executed(self.executed[2:3])
+        self.assertEqual(lines, ['ROLLBACK TO SAVEPOINT pgtextindex_upsert'])
+        self.assertEqual(params, None)
+
+        lines, params = self._format_executed(self.executed[3:4])
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=to_tsvector(%s, %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, None, 'english', 'Waldo', 5))
+
+        lines, params = self._format_executed(self.executed[4:5])
+        self.assertEqual(lines,
+                         ['SAVEPOINT pgtextindex_upsert;',
+                          'INSERT INTO pgtextindex '
+                              '(docid, coefficient, marker, text_vector)',
+                          'VALUES (%s, %s, %s, to_tsvector(%s, %s))'])
+        self.assertEqual(params, (5, 1.0, None, 'english', 'Waldo'))
+
+        lines, params = self._format_executed(self.executed[5:6])
+        self.assertEqual(lines, ['RELEASE SAVEPOINT pgtextindex_upsert'])
+        self.assertEqual(params, None)
 
     def test_index_doc_with_three_integrity_errors(self):
         import psycopg2
-        index = self._make_one(execute_errors=[psycopg2.IntegrityError] * 3)
+        execute_errors = [None, psycopg2.IntegrityError, None] * 3
+        index = self._make_one(execute_errors=execute_errors, rowcounts=())
         sleeps = []
         index.sleep = sleeps.append
         self.assertRaises(psycopg2.IntegrityError, index.index_doc, 5, 'Waldo')
         self.assertEqual(len(sleeps), 2)
-        self.assertEqual(len(self.executed), 3)
+        self.assertEqual(len(self.executed), 8)
 
     def test_unindex_doc(self):
         index = self._make_one()
@@ -745,20 +814,21 @@ class TestPGTextIndex(unittest.TestCase):
             self.assertRaises(NotImplementedError, method, 'foo')
 
     def test_migrate_to_0_8_0(self):
-        index = self._make_one(results=[(5,), (6,)])
+        index = self._make_one(results=[(5,), (6,)], rowcounts=[0, 1])
         all_docids = index.family.IF.Set([5, 6, 7])
         index._migrate_to_0_8_0(all_docids)
         self.assertEqual(len(self.executed), 2)
-        lines, params = self._format_executed([self.executed[0]])
+        lines, params = self._format_executed(self.executed[0:1])
         self.assertEqual(lines, [
             'SELECT docid FROM pgtextindex',
         ])
         self.assertEqual(params, None)
-        lines, params = self._format_executed([self.executed[1]])
-        self.assertEqual(lines, [
-            'DELETE FROM pgtextindex WHERE docid = %s;',
-            'INSERT INTO pgtextindex '
-                '(docid, coefficient, marker, text_vector)',
-            'VALUES (%s, 0.0, null, null)',
-        ])
-        self.assertEqual(params, (7, 7))
+
+        lines, params = self._format_executed(self.executed[1:2])
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=null',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, ('0.0', None, 7))

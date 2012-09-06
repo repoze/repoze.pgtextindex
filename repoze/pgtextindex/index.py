@@ -12,6 +12,7 @@ import BTrees
 import logging
 import psycopg2
 import random
+import thread
 import time
 
 _missing = object()
@@ -155,7 +156,7 @@ class PGTextIndex(Persistent):
         if IWeightedText.providedBy(value):
             coefficient = getattr(value, 'coefficient', 1.0)
             marker = getattr(value, 'marker', None)
-            params = [docid, docid, coefficient, marker]
+            params = [coefficient, marker]
             text = '%s' % value  # Call the __str__() method
             if text:
                 clauses.append('to_tsvector(%s, %s)')
@@ -170,45 +171,60 @@ class PGTextIndex(Persistent):
         else:
             # The value is a simple string.  Strings can not
             # influence the weighting.
-            params = [docid, docid, 1.0, None]
+            params = [1.0, None]
             if value:
                 clauses.append('to_tsvector(%s, %s)')
                 params.extend([self.ts_config, _truncate('%s' % value)])
 
-        if len(params) > 4:
-            clause = ' || '.join(clauses)
-            stmt = """
-            DELETE FROM %(table)s WHERE docid = %%s;
-            INSERT INTO %(table)s (docid, coefficient, marker, text_vector)
-            VALUES (%%s, %%s, %%s, %(clause)s)
-            """ % {'table': self.table, 'clause': clause}
-            self._execute_with_retry(stmt, tuple(params), docid)
+        if len(params) > 2:
+            self._upsert(docid, params, ' || '.join(clauses))
         else:
             self._index_null(docid)
 
     reindex_doc = index_doc
 
     def _index_null(self, docid):
-        stmt = """
-        DELETE FROM %(table)s WHERE docid = %%s;
-        INSERT INTO %(table)s (docid, coefficient, marker, text_vector)
-        VALUES (%%s, 0.0, null, null)
-        """ % {'table': self.table}
-        self._execute_with_retry(stmt, (docid, docid), docid)
+        self._upsert(docid, ('0.0', None), 'null')
 
-    def _execute_with_retry(self, stmt, params, docid):
+    def _upsert(self, docid, params, text_vector_clause):
+        """Update or insert a row in the index."""
+        cursor = self.cursor
+        kw = {'table': self.table, 'clause': text_vector_clause}
+
         for attempt in (1, 2, 3):
-            try:
-                self.cursor.execute(stmt, params)
+            stmt = """
+            UPDATE %(table)s SET
+                coefficient=%%s,
+                marker=%%s,
+                text_vector=%(clause)s
+            WHERE docid=%%s
+            """ % kw
+            cursor.execute(stmt, tuple(params) + (docid,))
+            if cursor.rowcount:
+                # Success.
                 return
+
+            stmt = """
+            SAVEPOINT pgtextindex_upsert;
+            INSERT INTO %(table)s (docid, coefficient, marker, text_vector)
+            VALUES (%%s, %%s, %%s, %(clause)s)
+            """ % kw
+            try:
+                cursor.execute(stmt, (docid,) + tuple(params))
             except psycopg2.IntegrityError:
-                # Another thread is updating in parallel.
+                # Another thread is working in parallel.
                 # Wait a moment and try again.
                 if attempt >= 3:
                     raise
-                log.info("Concurrent pgtextindex update on docid %s; "
-                         "retrying.", docid)
+                log.warning("Concurrent upsert on docid %s "
+                            "in thread %s; retrying. (attempt %d)",
+                            docid, thread.get_ident(), attempt)
+                self.cursor.execute("ROLLBACK TO SAVEPOINT pgtextindex_upsert")
                 self.sleep(attempt * random.random())
+            else:
+                # Success.
+                cursor.execute('RELEASE SAVEPOINT pgtextindex_upsert')
+                return
 
     sleep = time.sleep
 
