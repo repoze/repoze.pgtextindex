@@ -46,7 +46,8 @@ Usage
         dsn,
         table='pgtextindex',
         ts_config='english',
-        drop_and_create=False)
+        drop_and_create=False,
+        maxlen=1048575)
 
 The arguments to the constructor are as follows:
 
@@ -71,6 +72,13 @@ The arguments to the constructor are as follows:
 ``drop_and_create``
         If `True` the table and index used will dropped (if it exists) and
         (re)created.  The default is `False`.
+
+``maxlen``
+        The maximum number of characters to index per document.  The default is
+        1048575 (2**20 - 1), which is the maximum allowed by the to_tsvector
+        function.  Reduce this to improve query speed, since the
+        ts_rank_cd function retrieves and decompresses entire TOAST tuples
+        when querying.
 
 .. _`repoze.catalog documentation`: http://docs.repoze.org/catalog/
 
