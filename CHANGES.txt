@@ -1,4 +1,13 @@
 
+1.2 (2012-10-09)
+================
+
+- Improved query speed by about 10% by duplicating the query parameter
+  rather than joining with the query.
+
+- Added the maxlen option to allow a configurable document size limit.
+
+
 1.1 (2012-09-06)
 ================
 

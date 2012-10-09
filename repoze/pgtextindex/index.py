@@ -25,6 +25,7 @@ class PGTextIndex(Persistent):
     family = BTrees.family32
     connection_manager_factory = PostgresConnectionManager
     _v_temp_cm = None  # A PostgresConnectionManager used during initialization
+    maxlen = 1048575
 
     def __init__(self,
                  discriminator,
@@ -33,6 +34,7 @@ class PGTextIndex(Persistent):
                  ts_config='english',
                  connection_manager_factory=None,
                  drop_and_create=False,
+                 maxlen=1048575,
                  ):
 
         if not callable(discriminator):
@@ -44,6 +46,7 @@ class PGTextIndex(Persistent):
         self.table = table
         self._subs = dict(table=table)  # map of query string substitutions
         self.ts_config = ts_config
+        self.maxlen = maxlen
         if connection_manager_factory is not None:
             self.connection_manager_factory = connection_manager_factory
         if drop_and_create:
@@ -160,12 +163,14 @@ class PGTextIndex(Persistent):
             text = '%s' % value  # Call the __str__() method
             if text:
                 clauses.append('to_tsvector(%s, %s)')
-                params.extend([self.ts_config, _truncate(text)])
+                params.extend([self.ts_config,
+                               _truncate(text, self.maxlen)])
             for weight in ('A', 'B', 'C'):
                 text = getattr(value, weight, None)
                 if text:
                     clauses.append('setweight(to_tsvector(%s, %s), %s)')
-                    params.extend([self.ts_config, _truncate('%s' % text),
+                    params.extend([self.ts_config,
+                                   _truncate('%s' % text, self.maxlen),
                                    weight])
 
         else:
@@ -174,7 +179,8 @@ class PGTextIndex(Persistent):
             params = [1.0, None]
             if value:
                 clauses.append('to_tsvector(%s, %s)')
-                params.extend([self.ts_config, _truncate('%s' % value)])
+                params.extend([self.ts_config,
+                               _truncate('%s' % value, self.maxlen)])
 
         if len(params) > 2:
             self._upsert(docid, params, ' || '.join(clauses))
@@ -267,14 +273,15 @@ class PGTextIndex(Persistent):
             text = getattr(query, 'text', None)
             if text is None:
                 text = '%s' % query  # Use __str__()
-            params = [
-                getattr(query, 'D', 0.1),
-                getattr(query, 'C', 0.2),
-                getattr(query, 'B', 0.4),
-                getattr(query, 'A', 1.0),
-                self.ts_config,
-                convert_query(text),
-            ]
+            cq = convert_query(text)
+            params = [getattr(query, 'D', 0.1),
+                      getattr(query, 'C', 0.2),
+                      getattr(query, 'B', 0.4),
+                      getattr(query, 'A', 1.0),
+                      self.ts_config,
+                      cq,
+                      self.ts_config,
+                      cq]
             marker = getattr(query, 'marker', None)
             if marker:
                 kw['filter'] += " AND marker = %s"
@@ -288,17 +295,18 @@ class PGTextIndex(Persistent):
                 kw['offset'] = "OFFSET %s"
                 params.append(offset)
         else:
-            params = (self.ts_config, convert_query(query))
+            cq = convert_query(query)
+            params = (self.ts_config, cq, self.ts_config, cq)
 
         if docids is not None:
             docidstr = ','.join(str(docid) for docid in docids)
             kw['filter'] += ' AND docid IN (%s)' % docidstr
 
         stmt = """
-        SELECT docid,
-            coefficient * ts_rank_cd(%(weight)stext_vector, query) AS rank
-        FROM %(table)s, to_tsquery(%%s, %%s) query
-        WHERE %(not)s(text_vector @@ query)
+        SELECT docid, coefficient *
+            ts_rank_cd(%(weight)stext_vector, to_tsquery(%%s, %%s)) AS rank
+        FROM %(table)s
+        WHERE %(not)s(text_vector @@ to_tsquery(%%s, %%s))
         %(filter)s
         ORDER BY rank DESC
         %(limit)s
@@ -488,16 +496,18 @@ def _mp_release_resources(jar):
     jar._release_resources = _release_resources
 
 
-def _truncate(text):
+def _truncate(text, maxlen):
+    """Truncate long document text.
+
+    PostgreSQL refuses tsvectors > 1 MiB.  Limit the tsvectors even more to
+    improve the speed of ts_rank_cd (which has to load every large tsvector
+    from a TOAST table.)
     """
-    PostgreSQL can't handle ts_vectors that are 1MB or larger.
-    """
-    MAXLEN = 1048575
     l = len(text)
-    if l <= MAXLEN:
+    if l <= maxlen:
         return text
 
-    trunc = MAXLEN
+    trunc = maxlen
     while text[trunc].isalnum():
         trunc -= 1
     return text[:trunc]
