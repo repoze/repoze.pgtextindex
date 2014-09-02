@@ -146,7 +146,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=null',
                           'WHERE docid=%s'])
-        self.assertEqual(params, ('0.0', None, 6))
+        self.assertEqual(params, ('0.0', [], 6))
 
     def test_index_doc_empty_string(self):
         index = self._make_one()
@@ -158,7 +158,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=null',
                           'WHERE docid=%s'])
-        self.assertEqual(params, ('0.0', None, 6))
+        self.assertEqual(params, ('0.0', [], 6))
 
     def test_index_doc_empty_strings_weighted(self):
         index = self._make_one()
@@ -170,7 +170,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=setweight(to_tsvector(%s, %s), %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, None, 'english', "['', '']", 'A', 6))
+        self.assertEqual(params, (1.0, [], 'english', "['', '']", 'A', 6))
 
     def test_index_doc_unweighted(self):
         index = self._make_one()
@@ -182,7 +182,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=to_tsvector(%s, %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, None, 'english', 'Waldo', 5))
+        self.assertEqual(params, (1.0, [], 'english', 'Waldo', 5))
 
     def test_index_doc_unweighted_long(self):
         text = 'Waldo ' * 174763 # Over 1MB
@@ -196,7 +196,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'text_vector=to_tsvector(%s, %s)',
                           'WHERE docid=%s'])
         self.assertEqual(
-            params, (1.0, None, 'english', text[:1048571], 5))
+            params, (1.0, [], 'english', text[:1048571], 5))
 
     def test_index_doc_using_attr_discriminator(self):
         class DummyObject:
@@ -211,7 +211,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=to_tsvector(%s, %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, None, 'english', 'Osvaldo', 6))
+        self.assertEqual(params, (1.0, [], 'english', 'Osvaldo', 6))
 
     def test_index_doc_missing_value(self):
         def discriminator(obj, default):
@@ -226,7 +226,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=null',
                           'WHERE docid=%s'])
-        self.assertEqual(params, ('0.0', None, 6))
+        self.assertEqual(params, ('0.0', [], 6))
 
     def test_index_doc_persistent_object(self):
         # Unlike other indexes, PGTextIndex allows persistent objects
@@ -247,7 +247,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=to_tsvector(%s, %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, None, 'english', 'x', 6))
+        self.assertEqual(params, (1.0, [], 'english', 'x', 6))
 
     def test_index_doc_use_one_weight(self):
         index = self._make_one()
@@ -260,7 +260,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'text_vector=to_tsvector(%s, %s) || '
                           'setweight(to_tsvector(%s, %s), %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, None,
+        self.assertEqual(params, (1.0, [],
                                   'english', 'character',
                                   'english', 'Waldo', 'A',
                                   5))
@@ -278,7 +278,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'text_vector=to_tsvector(%s, %s) || '
                           'setweight(to_tsvector(%s, %s), %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, None,
+        self.assertEqual(params, (1.0, [],
                                   'english', text2[:1048571],
                                   'english', text1[:1048571], 'A',
                                   5))
@@ -296,7 +296,7 @@ class TestPGTextIndex(unittest.TestCase):
                               'setweight(to_tsvector(%s, %s), %s) || '
                               'setweight(to_tsvector(%s, %s), %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, None,
+        self.assertEqual(params, (1.0, [],
                                   'english', 'person entity',
                                   'english', 'Waldo', 'A',
                                   'english', 'character', 'B',
@@ -314,7 +314,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'text_vector=setweight(to_tsvector(%s, %s), %s) || '
                               'setweight(to_tsvector(%s, %s), %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, None,
+        self.assertEqual(params, (1.0, [],
                                   'english', 'Waldo', 'A',
                                   'english', 'boy', 'C',
                                   5))
@@ -337,7 +337,28 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=to_tsvector(%s, %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, 'book', 'english', 'Where is Waldo', 5))
+        self.assertEqual(params, (1.0, ['book'], 'english', 'Where is Waldo', 5))
+
+    def test_index_doc_with_markers(self):
+        index = self._make_one()
+
+        from repoze.pgtextindex.interfaces import IWeightedText
+        from zope.interface import implements
+
+        class DummyText(unicode):
+            implements(IWeightedText)
+            marker = ['book', 'club']
+
+        index.index_doc(5, DummyText('Where is Waldo'))
+        lines, params = self._format_executed(self.executed)
+        self.assertEqual(lines,
+                         ['UPDATE pgtextindex SET',
+                          'coefficient=%s,',
+                          'marker=%s,',
+                          'text_vector=to_tsvector(%s, %s)',
+                          'WHERE docid=%s'])
+        self.assertEqual(params, (1.0, ['book', 'club'],
+                                  'english', 'Where is Waldo', 5))
 
     def test_index_doc_multiple_texts_with_the_same_weight(self):
         index = self._make_one()
@@ -349,7 +370,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=setweight(to_tsvector(%s, %s), %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, None,
+        self.assertEqual(params, (1.0, [],
                                   'english', "['Waldo', 'Wally']", 'A', 5))
 
     def test_index_doc_using_insert_without_conflict(self):
@@ -367,7 +388,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=to_tsvector(%s, %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, None, 'english', 'Waldo', 5))
+        self.assertEqual(params, (1.0, [], 'english', 'Waldo', 5))
 
         lines, params = self._format_executed(self.executed[1:2])
         self.assertEqual(lines,
@@ -375,7 +396,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'INSERT INTO pgtextindex '
                               '(docid, coefficient, marker, text_vector)',
                           'VALUES (%s, %s, %s, to_tsvector(%s, %s))'])
-        self.assertEqual(params, (5, 1.0, None, 'english', 'Waldo'))
+        self.assertEqual(params, (5, 1.0, [], 'english', 'Waldo'))
 
         lines, params = self._format_executed(self.executed[2:3])
         self.assertEqual(lines, ['RELEASE SAVEPOINT pgtextindex_upsert'])
@@ -399,7 +420,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=to_tsvector(%s, %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, None, 'english', 'Waldo', 5))
+        self.assertEqual(params, (1.0, [], 'english', 'Waldo', 5))
 
         lines, params = self._format_executed(self.executed[1:2])
         self.assertEqual(lines,
@@ -407,7 +428,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'INSERT INTO pgtextindex '
                               '(docid, coefficient, marker, text_vector)',
                           'VALUES (%s, %s, %s, to_tsvector(%s, %s))'])
-        self.assertEqual(params, (5, 1.0, None, 'english', 'Waldo'))
+        self.assertEqual(params, (5, 1.0, [], 'english', 'Waldo'))
 
         lines, params = self._format_executed(self.executed[2:3])
         self.assertEqual(lines, ['ROLLBACK TO SAVEPOINT pgtextindex_upsert'])
@@ -420,7 +441,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=to_tsvector(%s, %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, None, 'english', 'Waldo', 5))
+        self.assertEqual(params, (1.0, [], 'english', 'Waldo', 5))
 
         lines, params = self._format_executed(self.executed[4:5])
         self.assertEqual(lines,
@@ -428,7 +449,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'INSERT INTO pgtextindex '
                               '(docid, coefficient, marker, text_vector)',
                           'VALUES (%s, %s, %s, to_tsvector(%s, %s))'])
-        self.assertEqual(params, (5, 1.0, None, 'english', 'Waldo'))
+        self.assertEqual(params, (5, 1.0, [], 'english', 'Waldo'))
 
         lines, params = self._format_executed(self.executed[5:6])
         self.assertEqual(lines, ['RELEASE SAVEPOINT pgtextindex_upsert'])
@@ -622,7 +643,7 @@ class TestPGTextIndex(unittest.TestCase):
                 "text_vector, to_tsquery(%s, %s)) AS rank",
             'FROM pgtextindex',
             'WHERE (text_vector @@ to_tsquery(%s, %s))',
-            'AND marker = %s',
+            'AND %s = ANY(marker)',
             'ORDER BY rank DESC',
         ])
         self.assertEqual(params, (0.1, 0.2, 0.4, 1.0,
@@ -688,7 +709,7 @@ class TestPGTextIndex(unittest.TestCase):
                 "text_vector, to_tsquery(%s, %s)) AS rank",
             'FROM pgtextindex',
             'WHERE (text_vector @@ to_tsquery(%s, %s))',
-            'AND marker = %s',
+            'AND %s = ANY(marker)',
             'ORDER BY rank DESC',
             'LIMIT %s',
             'OFFSET %s',
@@ -836,4 +857,4 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=null',
                           'WHERE docid=%s'])
-        self.assertEqual(params, ('0.0', None, 7))
+        self.assertEqual(params, ('0.0', [], 7))

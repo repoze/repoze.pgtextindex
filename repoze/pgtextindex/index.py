@@ -90,7 +90,7 @@ class PGTextIndex(Persistent):
             CREATE TABLE %(table)s (
                 docid INTEGER NOT NULL PRIMARY KEY,
                 coefficient REAL NOT NULL DEFAULT 1.0,
-                marker CHARACTER VARYING,
+                marker CHARACTER VARYING ARRAY,
                 text_vector tsvector
             );
 
@@ -158,7 +158,9 @@ class PGTextIndex(Persistent):
         clauses = []
         if IWeightedText.providedBy(value):
             coefficient = getattr(value, 'coefficient', 1.0)
-            marker = getattr(value, 'marker', None)
+            marker = getattr(value, 'marker', [])
+            if isinstance(marker, basestring):
+                marker = [marker,]
             params = [coefficient, marker]
             text = '%s' % value  # Call the __str__() method
             if text:
@@ -176,7 +178,7 @@ class PGTextIndex(Persistent):
         else:
             # The value is a simple string.  Strings can not
             # influence the weighting.
-            params = [1.0, None]
+            params = [1.0, []]
             if value:
                 clauses.append('to_tsvector(%s, %s)')
                 params.extend([self.ts_config,
@@ -190,13 +192,12 @@ class PGTextIndex(Persistent):
     reindex_doc = index_doc
 
     def _index_null(self, docid):
-        self._upsert(docid, ('0.0', None), 'null')
+        self._upsert(docid, ('0.0', []), 'null')
 
     def _upsert(self, docid, params, text_vector_clause):
         """Update or insert a row in the index."""
         cursor = self.cursor
         kw = {'table': self.table, 'clause': text_vector_clause}
-
         for attempt in (1, 2, 3):
             stmt = """
             UPDATE %(table)s SET
@@ -284,7 +285,7 @@ class PGTextIndex(Persistent):
                       cq]
             marker = getattr(query, 'marker', None)
             if marker:
-                kw['filter'] += " AND marker = %s"
+                kw['filter'] += " AND %s = ANY(marker)"
                 params.append(marker)
             limit = getattr(query, 'limit', None)
             if limit:

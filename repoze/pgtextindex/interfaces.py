@@ -55,7 +55,8 @@ class IWeightedText(Interface):
     default coefficient is 1.
     """)
 
-    marker = Attribute("Optional: a string marker value.")
+    marker = Attribute("Optional: a string marker value or sequence of string "
+                       "marker values.")
 
 
 class IWeightedQuery(Interface):
