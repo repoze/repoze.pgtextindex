@@ -469,6 +469,40 @@ class PGTextIndex(Persistent):
         for docid in self.family.IF.difference(docids, self.docids()):
             self._index_null(docid)
 
+    def upgrade(self):
+        """
+        Upgrade an existing index to latest version. This function is
+        idempotent.
+        """
+        cursor = self.cursor
+
+        # Convert marker column to an array
+        query = """
+        SELECT data_type FROM information_schema.columns
+        WHERE table_catalog=current_catalog AND
+              table_schema='public' AND
+              table_name=%s AND
+              column_name='marker'
+        """
+        cursor.execute(query, (self.table,))
+        if cursor.fetchone()[0] == 'character varying':
+            stmt = (
+                "ALTER TABLE %s RENAME marker TO marker_old" %
+                self.table)
+            cursor.execute(stmt)
+            stmt = (
+                "ALTER TABLE %s ADD marker CHARACTER VARYING ARRAY" %
+                self.table)
+            cursor.execute(stmt)
+            stmt = (
+                "UPDATE %s SET marker[0]=marker_old" %
+                self.table)
+            cursor.execute(stmt)
+            stmt = (
+                "ALTER TABLE %s DROP marker_old" %
+                self.table)
+            cursor.execute(stmt)
+
 
 def _mp_release_resources(jar):
     """

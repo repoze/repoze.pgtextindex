@@ -58,7 +58,7 @@ class TestPGTextIndex(unittest.TestCase):
                 return iter(results)
 
             def fetchone(self):
-                return ['one']
+                return results[0]
 
         return self._class(discriminator, dsn,
             connection_manager_factory=DummyConnectionManager, **kw)
@@ -858,3 +858,45 @@ class TestPGTextIndex(unittest.TestCase):
                           'text_vector=null',
                           'WHERE docid=%s'])
         self.assertEqual(params, ('0.0', [], 7))
+
+    def test_upgrade_nothing_to_do(self):
+        index = self._make_one()
+        index.upgrade()
+        self.assertEqual(len(self.executed), 1)
+        lines, params = self._format_executed(self.executed)
+        self.assertEqual(lines, [
+            'SELECT data_type FROM information_schema.columns',
+            'WHERE table_catalog=current_catalog AND',
+            "table_schema='public' AND",
+            'table_name=%s AND',
+            "column_name='marker'"])
+        self.assertEqual(params, ('pgtextindex',))
+
+    def test_upgrade_markers_to_arrays(self):
+        index = self._make_one(results=[('character varying',)])
+        index.upgrade()
+        self.assertEqual(len(self.executed), 5)
+        lines, params = self._format_executed(self.executed[0:1])
+        self.assertEqual(lines, [
+            'SELECT data_type FROM information_schema.columns',
+            'WHERE table_catalog=current_catalog AND',
+            "table_schema='public' AND",
+            'table_name=%s AND',
+            "column_name='marker'"])
+        self.assertEqual(params, ('pgtextindex',))
+        lines, params = self._format_executed(self.executed[1:2])
+        self.assertEqual(lines, [
+            'ALTER TABLE pgtextindex RENAME marker TO marker_old'])
+        self.assertEqual(params, None)
+        lines, params = self._format_executed(self.executed[2:3])
+        self.assertEqual(lines, [
+            'ALTER TABLE pgtextindex ADD marker CHARACTER VARYING ARRAY'])
+        self.assertEqual(params, None)
+        lines, params = self._format_executed(self.executed[3:4])
+        self.assertEqual(lines, [
+            'UPDATE pgtextindex SET marker[0]=marker_old'])
+        self.assertEqual(params, None)
+        lines, params = self._format_executed(self.executed[4:5])
+        self.assertEqual(lines, [
+            'ALTER TABLE pgtextindex DROP marker_old'])
+        self.assertEqual(params, None)
