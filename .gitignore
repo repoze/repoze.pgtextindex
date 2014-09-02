@@ -1,3 +1,5 @@
+*.pyc
+.*.swp
 build
 repoze.pgtextindex.egg-info
 dist
