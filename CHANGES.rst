@@ -1,3 +1,11 @@
+1.3 (2014-09-03)
+================
+
+- Changed the 'marker' column to an array and changed the 'marker' attribute of
+  'IWeightedQuery' to accept either a single marker string or a sequence of
+  marker strings. Since the database schema has changed, 
+  'PGTextIndex.upgrade()' will need to be run on any indexes created with an 
+  older version of the code. (LP #1353483)
 
 1.2 (2012-10-09)
 ================
