@@ -275,18 +275,20 @@ class PGTextIndex(Persistent):
             if text is None:
                 text = '%s' % query  # Use __str__()
             cq = convert_query(text)
-            params = [getattr(query, 'D', 0.1),
-                      getattr(query, 'C', 0.2),
-                      getattr(query, 'B', 0.4),
-                      getattr(query, 'A', 1.0),
-                      self.ts_config,
-                      cq,
-                      self.ts_config,
-                      cq]
+            params = [
+                self.ts_config,
+                cq,
+                getattr(query, 'D', 0.1),
+                getattr(query, 'C', 0.2),
+                getattr(query, 'B', 0.4),
+                getattr(query, 'A', 1.0),
+                self.ts_config,
+                cq,
+            ]
             marker = getattr(query, 'marker', None)
             if marker:
                 kw['filter'] += " AND %s = ANY(marker)"
-                params.append(marker)
+                params.insert(2, marker)
             limit = getattr(query, 'limit', None)
             if limit:
                 kw['limit'] = "LIMIT %s"
@@ -304,11 +306,16 @@ class PGTextIndex(Persistent):
             kw['filter'] += ' AND docid IN (%s)' % docidstr
 
         stmt = """
-        SELECT docid, coefficient *
-            ts_rank_cd(%(weight)stext_vector, to_tsquery(%%s, %%s)) AS rank
-        FROM %(table)s
-        WHERE %(not)s(text_vector @@ to_tsquery(%%s, %%s))
-        %(filter)s
+        WITH _filtered AS (
+            SELECT docid, coefficient, text_vector
+            FROM %(table)s
+            WHERE %(not)s(text_vector @@ to_tsquery(%%s, %%s)) %(filter)s),
+        _ranked AS (
+            SELECT docid, coefficient *
+                ts_rank_cd(%(weight)stext_vector, to_tsquery(%%s, %%s)) AS rank
+            FROM _filtered)
+        SELECT docid, rank
+        FROM _ranked
         ORDER BY rank DESC
         %(limit)s
         %(offset)s
