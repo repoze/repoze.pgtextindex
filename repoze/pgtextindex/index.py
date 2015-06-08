@@ -26,6 +26,7 @@ class PGTextIndex(Persistent):
     connection_manager_factory = PostgresConnectionManager
     _v_temp_cm = None  # A PostgresConnectionManager used during initialization
     maxlen = 1048575
+    max_ranked = 6000
 
     def __init__(self,
                  discriminator,
@@ -264,6 +265,7 @@ class PGTextIndex(Persistent):
             'filter': '',
             'limit': '',
             'offset': '',
+            'max_ranked': self.max_ranked,
         }
 
         if invert:
@@ -310,16 +312,20 @@ class PGTextIndex(Persistent):
             SELECT docid, coefficient, text_vector
             FROM %(table)s
             WHERE %(not)s(text_vector @@ to_tsquery(%%s, %%s)) %(filter)s),
+        _counter AS (SELECT count(1) AS n FROM _filtered),
         _ranked AS (
-            SELECT docid, coefficient *
-                ts_rank_cd(%(weight)stext_vector, to_tsquery(%%s, %%s)) AS rank
-            FROM _filtered)
+            SELECT docid, coefficient * (
+                CASE WHEN n <= %(max_ranked)s THEN
+                    ts_rank_cd(%(weight)stext_vector, to_tsquery(%%s, %%s))
+                ELSE 1 END) AS rank
+            FROM _filtered, _counter)
         SELECT docid, rank
         FROM _ranked
         ORDER BY rank DESC
         %(limit)s
         %(offset)s
         """ % kw
+
         cursor = self.cursor
         cursor.execute(stmt, tuple(params))
         return cursor
