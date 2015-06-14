@@ -509,7 +509,7 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params, ('english', "( 'Waldo' ) & ( 'Wally' )",
                                   'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_applyEq(self):
@@ -534,7 +534,7 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params, ('english', "( 'Waldo' ) & ( 'Wally' )",
                                   'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_applyContains(self):
@@ -559,7 +559,7 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params, ('english', "( 'Waldo' ) & ( 'Wally' )",
                                   'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_applyNotEq(self):
@@ -584,7 +584,7 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params, ('english', "( 'Waldo' ) & ( 'Wally' )",
                                   'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_applyDoesNotContain(self):
@@ -609,7 +609,7 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params, ('english', "( 'Waldo' ) & ( 'Wally' )",
                                   'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_apply_weighted_query_normal(self):
@@ -649,7 +649,7 @@ class TestPGTextIndex(unittest.TestCase):
             'english', "( 'Waldo' ) & ( 'Wally' )",
             1, 16, 256, 4096,
             'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_apply_weighted_query_with_deprecated_text_method(self):
@@ -690,7 +690,7 @@ class TestPGTextIndex(unittest.TestCase):
             'english', "( 'Surly' ) & ( 'Susan' )",
             1, 16, 256, 4096,
             'english', "( 'Surly' ) & ( 'Susan' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_apply_with_marker(self):
@@ -729,7 +729,7 @@ class TestPGTextIndex(unittest.TestCase):
             ['book'],
             0.1, 0.2, 0.4, 1.0,
             'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_apply_with_limit_and_offset(self):
@@ -770,7 +770,7 @@ class TestPGTextIndex(unittest.TestCase):
             0.1, 0.2, 0.4, 1.0,
             'english', "( 'Waldo' ) & ( 'Wally' )",
             5, 10))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_apply_with_all_weight_and_limit_features(self):
@@ -818,7 +818,7 @@ class TestPGTextIndex(unittest.TestCase):
             1, 16, 256, 4096,
             'english', "( 'Waldo' ) & ( 'Wally' )",
             5, 10))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_docids(self):
@@ -835,14 +835,14 @@ class TestPGTextIndex(unittest.TestCase):
     def test_apply_intersect_with_no_docids(self):
         index = self._make_one()
         res = index.apply_intersect('Waldo', [])
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 0)
         self.assertEqual(len(self.executed), 0)
 
     def test_apply_intersect_with_docids(self):
         index = self._make_one()
         res = index.apply_intersect('Waldo', [8, 6, 7])
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
         lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
@@ -906,7 +906,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_sort_normal(self):
         index = self._make_one()
-        bucket = index.family.IF.Bucket([
+        bucket = index.family.IF.BTree([
             (8, 0.3),
             (4, -0.5),
             (9, 0.0),
@@ -916,7 +916,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_sort_reverse(self):
         index = self._make_one()
-        bucket = index.family.IF.Bucket([
+        bucket = index.family.IF.BTree([
             (8, 0.3),
             (4, -0.5),
             (9, 0.0),
@@ -926,7 +926,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_sort_limited(self):
         index = self._make_one()
-        bucket = index.family.IF.Bucket([
+        bucket = index.family.IF.BTree([
             (8, 0.3),
             (4, -0.5),
             (9, 0.0),

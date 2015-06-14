@@ -344,7 +344,8 @@ class PGTextIndex(Persistent):
 
         cursor = self.cursor
         cursor.execute(stmt, tuple(params))
-        result = cursor.fetchall()
+        result = self.family.IF.BTree()
+        result.update(cursor.fetchall())
 
         if cache is not None:
             cache[cache_key] = result
@@ -352,16 +353,10 @@ class PGTextIndex(Persistent):
         return result
 
     def applyContains(self, query):
-        data = self._run_query(query)
-        res = self.family.IF.Bucket()
-        res.update(data)
-        return res
+        return self._run_query(query)
 
     def applyDoesNotContain(self, query):
-        data = self._run_query(query, invert=True)
-        res = self.family.IF.Bucket()
-        res.update(data)
-        return res
+        return self._run_query(query, invert=True)
 
     apply = applyEq = applyContains  # @ReservedAssignment
     applyNotEq = applyDoesNotContain
@@ -404,7 +399,8 @@ class PGTextIndex(Persistent):
         cursor = self.cursor
         params = (self.ts_config, self.ts_config, s, options)
         cursor.execute(stmt, params + tuple(raw_texts))
-        return [summary.decode(self.connection.encoding)
+        return [
+            summary.decode(self.connection.encoding)
             for (summary,) in cursor]
 
     def apply_intersect(self, query, docids):
@@ -413,11 +409,8 @@ class PGTextIndex(Persistent):
         ``docids`` is None, return the bare query results.
         """
         if not docids:
-            return self.family.IF.Bucket()
-        data = self._run_query(query, docids=docids)
-        res = self.family.IF.Bucket()
-        res.update(data)
-        return res
+            return self.family.IF.BTree()
+        return self._run_query(query, docids=docids)
 
     @metricmethod
     def sort(self, result, reverse=False, limit=None, sort_type=None):
