@@ -107,3 +107,13 @@ class IWeightedQuery(Interface):
         Used for paging/batching. The limit and offset attributes are normally
         used together.
         """)
+
+    cache_enabled = Attribute(
+        """Optional boolean: if true, pgtextindex will cache the result.
+
+        The result will be stored as the 'cache' attribute of this query
+        object.
+        """)
+
+    cache = Attribute(
+        """Optional: a dict of cached query results.""")

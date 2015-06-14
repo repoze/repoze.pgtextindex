@@ -61,6 +61,9 @@ class TestPGTextIndex(unittest.TestCase):
             def fetchone(self):
                 return results[0]
 
+            def fetchall(self):
+                return list(results)
+
         return self._class(discriminator, dsn,
             connection_manager_factory=DummyConnectionManager, **kw)
 
@@ -708,7 +711,7 @@ class TestPGTextIndex(unittest.TestCase):
             'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
             'WHERE (text_vector @@ to_tsquery(%s, %s)) '
-            ' AND %s = ANY(marker)),',
+            ' AND marker && %s::character varying[]),',
             '_counter AS (SELECT count(1) AS n FROM _filtered),',
             '_ranked AS (',
             'SELECT docid, coefficient * (',
@@ -723,7 +726,7 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params, (
             'english', "( 'Waldo' ) & ( 'Wally' )",
-            'book',
+            ['book'],
             0.1, 0.2, 0.4, 1.0,
             'english', "( 'Waldo' ) & ( 'Wally' )"))
         self.assertTrue(isinstance(res, index.family.IF.Bucket))
@@ -794,7 +797,7 @@ class TestPGTextIndex(unittest.TestCase):
             'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
             'WHERE (text_vector @@ to_tsquery(%s, %s)) '
-            ' AND %s = ANY(marker)),',
+            ' AND marker && %s::character varying[]),',
             '_counter AS (SELECT count(1) AS n FROM _filtered),',
             '_ranked AS (',
             'SELECT docid, coefficient * (',
@@ -811,7 +814,7 @@ class TestPGTextIndex(unittest.TestCase):
         ])
         self.assertEqual(params, (
             'english', "( 'Waldo' ) & ( 'Wally' )",
-            'book',
+            ['book'],
             1, 16, 256, 4096,
             'english', "( 'Waldo' ) & ( 'Wally' )",
             5, 10))

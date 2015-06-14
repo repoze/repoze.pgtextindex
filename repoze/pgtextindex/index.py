@@ -161,7 +161,7 @@ class PGTextIndex(Persistent):
             coefficient = getattr(value, 'coefficient', 1.0)
             marker = getattr(value, 'marker', [])
             if isinstance(marker, basestring):
-                marker = [marker,]
+                marker = [marker]
             params = [coefficient, marker]
             text = '%s' % value  # Call the __str__() method
             if text:
@@ -271,7 +271,20 @@ class PGTextIndex(Persistent):
         if invert:
             kw['not'] = 'NOT'
 
+        cache = None
+
         if IWeightedQuery.providedBy(query):
+
+            if getattr(query, 'cache_enabled', False):
+                cache_key = (invert, docids)
+                cache = getattr(query, 'cache', None)
+                if cache is None:
+                    query.cache = cache = {}
+                result = cache.get(cache_key)
+                if result is not None:
+                    # Cache hit.
+                    return result
+
             kw['weight'] = "'{%s, %s, %s, %s}', "
             text = getattr(query, 'text', None)
             if text is None:
@@ -289,7 +302,10 @@ class PGTextIndex(Persistent):
             ]
             marker = getattr(query, 'marker', None)
             if marker:
-                kw['filter'] += " AND %s = ANY(marker)"
+                # Match any marker value.
+                if isinstance(marker, basestring):
+                    marker = [marker]
+                kw['filter'] += " AND marker && %s::character varying[]"
                 params.insert(2, marker)
             limit = getattr(query, 'limit', None)
             if limit:
@@ -328,18 +344,21 @@ class PGTextIndex(Persistent):
 
         cursor = self.cursor
         cursor.execute(stmt, tuple(params))
-        return cursor
+        result = cursor.fetchall()
+
+        if cache is not None:
+            cache[cache_key] = result
+
+        return result
 
     def applyContains(self, query):
-        cursor = self._run_query(query)
-        data = list(cursor)
+        data = self._run_query(query)
         res = self.family.IF.Bucket()
         res.update(data)
         return res
 
     def applyDoesNotContain(self, query):
-        cursor = self._run_query(query, invert=True)
-        data = list(cursor)
+        data = self._run_query(query, invert=True)
         res = self.family.IF.Bucket()
         res.update(data)
         return res
@@ -395,8 +414,7 @@ class PGTextIndex(Persistent):
         """
         if not docids:
             return self.family.IF.Bucket()
-        cursor = self._run_query(query, docids=docids)
-        data = list(cursor)
+        data = self._run_query(query, docids=docids)
         res = self.family.IF.Bucket()
         res.update(data)
         return res
