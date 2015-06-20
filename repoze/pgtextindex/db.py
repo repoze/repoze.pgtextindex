@@ -1,6 +1,6 @@
 
 from transaction.interfaces import IDataManager
-from zope.interface import implementer
+from zope.interface import implements
 import psycopg2.extensions
 import transaction
 
@@ -14,8 +14,8 @@ except ImportError:  # pragma: no cover
 disconnected_exceptions = (psycopg2.OperationalError, psycopg2.InterfaceError)
 
 
-@implementer(IDataManager)
 class PostgresConnectionManager(object):
+    implements(IDataManager)
 
     def __init__(self, dsn, transaction_manager=transaction.manager,
                  module=psycopg2):
@@ -24,7 +24,7 @@ class PostgresConnectionManager(object):
         self.module = module
         self._connection = None
         self._cursor = None
-        self._sort_key = md5(self.dsn.encode('utf-8')).hexdigest()
+        self._sort_key = md5(self.dsn).hexdigest()
         self._joined = False
 
     @property

@@ -2,27 +2,25 @@
 from perfmetrics import metricmethod
 from persistent import Persistent
 from repoze.catalog.interfaces import ICatalogIndex
-from repoze.pgtextindex.compat import basestr
-from repoze.pgtextindex.compat import get_ident
-from repoze.pgtextindex.compat import py3
 from repoze.pgtextindex.db import PostgresConnectionManager
 from repoze.pgtextindex.interfaces import IWeightedQuery
 from repoze.pgtextindex.interfaces import IWeightedText
 from repoze.pgtextindex.queryconvert import convert_query
 from zope.index.interfaces import IIndexSort
-from zope.interface import implementer
+from zope.interface import implements
 import BTrees
 import logging
 import psycopg2
 import random
+import thread
 import time
 
 _missing = object()
 log = logging.getLogger(__name__)
 
 
-@implementer(ICatalogIndex, IIndexSort)
 class PGTextIndex(Persistent):
+    implements(ICatalogIndex, IIndexSort)
 
     family = BTrees.family32
     connection_manager_factory = PostgresConnectionManager
@@ -41,7 +39,7 @@ class PGTextIndex(Persistent):
                  ):
 
         if not callable(discriminator):
-            if not isinstance(discriminator, basestr):
+            if not isinstance(discriminator, basestring):
                 raise ValueError('discriminator value must be callable or a '
                                  'string')
         self.discriminator = discriminator
@@ -162,7 +160,7 @@ class PGTextIndex(Persistent):
         if IWeightedText.providedBy(value):
             coefficient = getattr(value, 'coefficient', 1.0)
             marker = getattr(value, 'marker', [])
-            if isinstance(marker, basestr):
+            if isinstance(marker, basestring):
                 marker = [marker]
             params = [coefficient, marker]
             text = '%s' % value  # Call the __str__() method
@@ -228,7 +226,7 @@ class PGTextIndex(Persistent):
                     raise
                 log.warning("Concurrent upsert on docid %s "
                             "in thread %s; retrying. (attempt %d)",
-                            docid, get_ident(), attempt)
+                            docid, thread.get_ident(), attempt)
                 self.cursor.execute("ROLLBACK TO SAVEPOINT pgtextindex_upsert")
                 self.sleep(attempt * random.random())
             else:
@@ -305,7 +303,7 @@ class PGTextIndex(Persistent):
             marker = getattr(query, 'marker', None)
             if marker:
                 # Match any marker value.
-                if isinstance(marker, basestr):
+                if isinstance(marker, basestring):
                     marker = [marker]
                 kw['filter'] += " AND marker && %s::character varying[]"
                 params.insert(2, marker)
@@ -369,7 +367,7 @@ class PGTextIndex(Persistent):
         cursor = self.cursor
         cursor.execute(stmt)
         res = self.family.IF.Set()
-        for row in cursor.fetchall():
+        for row in cursor:
             res.add(row[0])
         return res
 
@@ -401,14 +399,9 @@ class PGTextIndex(Persistent):
         cursor = self.cursor
         params = (self.ts_config, self.ts_config, s, options)
         cursor.execute(stmt, params + tuple(raw_texts))
-        if py3:
-            # Hopefully, decoding is not necessary. Untested.
-            return [summary for (summary,) in cursor.fetchall()]
-        else:
-            # Decoding is necessary.
-            return [
-                summary.decode(self.connection.encoding)
-                for (summary,) in cursor.fetchall()]
+        return [
+            summary.decode(self.connection.encoding)
+            for (summary,) in cursor]
 
     def apply_intersect(self, query, docids):
         """ Run the query implied by query, and return query results
@@ -579,8 +572,8 @@ def _truncate(text, maxlen):
     return text[:trunc]
 
 
-@implementer(IWeightedText)
 class SimpleWeightedText(object):
+    implements(IWeightedText)
 
     def __init__(self, A=None, B=None, C=None, default=''):
         self.A = A

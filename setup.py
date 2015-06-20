@@ -3,9 +3,6 @@ __version__ = '1.4dev'
 
 import os
 from setuptools import setup, find_packages
-import sys
-
-py3 = sys.version_info.major >= 3
 
 requires = [
     'setuptools',
@@ -13,9 +10,9 @@ requires = [
     'psycopg2',
     'repoze.catalog',
     'transaction',
-    ('ZODB' if py3 else 'ZODB3'),
+    'ZODB3',
     'zope.index',
-]
+    ]
 
 here = os.path.abspath(os.path.dirname(__file__))
 README = open(os.path.join(here, 'README.rst')).read()
@@ -31,8 +28,6 @@ setup(
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
         "Programming Language :: Python",
-        "Programming Language :: Python :: 2.7",
-        "Programming Language :: Python :: 3.4",
         "Framework :: ZODB",
         "License :: Repoze Public License",
         "Topic :: Database",

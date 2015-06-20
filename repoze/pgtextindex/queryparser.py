@@ -55,21 +55,20 @@ Summarizing the default operator rules:
 $Id: queryparser.py 70826 2006-10-20 03:41:16Z baijum $
 """
 
-from repoze.pgtextindex.compat import intrn
 from zope.index.text import parsetree
 from zope.index.text.interfaces import IQueryParser
-from zope.interface import implementer
+from zope.interface import implements
 import re
 
 
 # Create unique symbols for token types.
-_AND = intrn("AND")
-_OR = intrn("OR")
-_NOT = intrn("NOT")
-_LPAREN = intrn("(")
-_RPAREN = intrn(")")
-_ATOM = intrn("ATOM")
-_EOF = intrn("EOF")
+_AND    = intern("AND")
+_OR     = intern("OR")
+_NOT    = intern("NOT")
+_LPAREN = intern("(")
+_RPAREN = intern(")")
+_ATOM   = intern("ATOM")
+_EOF    = intern("EOF")
 
 # Map keyword string to token type.
 _keywords = {
@@ -98,8 +97,9 @@ _tokenizer_regex = re.compile(r"""
 _quote_re = re.compile(r'^"([^"]*)"$')
 
 
-@implementer(IQueryParser)
 class QueryParser(object):
+
+    implements(IQueryParser)
 
     def __init__(self):
         self._ignored = []
@@ -161,9 +161,9 @@ class QueryParser(object):
         L.append(self._parseAndExpr())
         while self._check(_OR):
             L.append(self._parseAndExpr())
-        L = listify(filter(None, L))
+        L = filter(None, L)
         if not L:
-            return None  # Only stopwords
+            return None # Only stopwords
         elif len(L) == 1:
             return L[0]
         else:
@@ -187,12 +187,12 @@ class QueryParser(object):
             elif self._check(_NOT):
                 t = self._parseTerm()
                 if t is None:
-                    continue  # Only stopwords
+                    continue # Only stopwords
                 Nots.append(parsetree.NotNode(t))
             else:
                 break
         if not L:
-            return None  # Only stopwords
+            return None # Only stopwords
         L.extend(Nots)
         if len(L) == 1:
             return L[0]
@@ -203,7 +203,7 @@ class QueryParser(object):
         if self._check(_NOT):
             t = self._parseTerm()
             if t is None:
-                return None  # Only stopwords
+                return None # Only stopwords
             return parsetree.NotNode(t)
         else:
             return self._parseTerm()
@@ -217,9 +217,9 @@ class QueryParser(object):
             nodes = [self._parseAtom()]
             while self._peek(_ATOM):
                 nodes.append(self._parseAtom())
-            nodes = listify(filter(None, nodes))
+            nodes = filter(None, nodes)
             if not nodes:
-                return None  # Only stopwords
+                return None # Only stopwords
             structure = [(isinstance(nodes[i], parsetree.NotNode), i, nodes[i])
                          for i in range(len(nodes))]
             structure.sort()
@@ -249,7 +249,7 @@ class QueryParser(object):
         # Filter out empty words and words that are nothing but
         # special characters. (Keep the special characters in words that have
         # them, though.)
-        words = listify(filter(remove_special_chars, words))
+        words = filter(remove_special_chars, words)
         if not words:
             self._ignored.append(orig_term)
             return None
@@ -271,7 +271,3 @@ def remove_special_chars(s):
         return s
     s = s.replace('"', '').replace('*', '').replace('?', '')
     return s
-
-
-def listify(x):
-    return x if isinstance(x, list) else list(x)

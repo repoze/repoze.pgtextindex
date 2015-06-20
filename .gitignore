@@ -15,5 +15,3 @@ parts
 .pydevproject
 .coverage
 coverage
-pyvenv.cfg
-pip-selfcheck.json
