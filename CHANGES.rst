@@ -1,4 +1,4 @@
-1.4 (Unreleased)
+1.4 (2015-06-20)
 ================
 
 - WeightedQueries can now be used as query result caches, making it
