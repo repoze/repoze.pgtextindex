@@ -10,6 +10,8 @@
   controls the threshold for disabling ranking.  The default max_ranked
   value is 6000.
 
+- Made compatible with Python 3.4.
+
 
 1.3 (2014-09-03)
 ================

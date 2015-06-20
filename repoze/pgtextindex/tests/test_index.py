@@ -1,5 +1,7 @@
 
+from repoze.pgtextindex.compat import unicd
 import unittest
+
 
 class TestPGTextIndex(unittest.TestCase):
     maxDiff = None
@@ -316,7 +318,7 @@ class TestPGTextIndex(unittest.TestCase):
                           'coefficient=%s,',
                           'marker=%s,',
                           'text_vector=setweight(to_tsvector(%s, %s), %s) || '
-                              'setweight(to_tsvector(%s, %s), %s)',
+                          'setweight(to_tsvector(%s, %s), %s)',
                           'WHERE docid=%s'])
         self.assertEqual(params, (1.0, [],
                                   'english', 'Waldo', 'A',
@@ -327,10 +329,10 @@ class TestPGTextIndex(unittest.TestCase):
         index = self._make_one()
 
         from repoze.pgtextindex.interfaces import IWeightedText
-        from zope.interface import implements
+        from zope.interface import implementer
 
-        class DummyText(unicode):
-            implements(IWeightedText)
+        @implementer(IWeightedText)
+        class DummyText(unicd):
             marker = 'book'
 
         index.index_doc(5, DummyText('Where is Waldo'))
@@ -341,16 +343,17 @@ class TestPGTextIndex(unittest.TestCase):
                           'marker=%s,',
                           'text_vector=to_tsvector(%s, %s)',
                           'WHERE docid=%s'])
-        self.assertEqual(params, (1.0, ['book'], 'english', 'Where is Waldo', 5))
+        self.assertEqual(
+            params, (1.0, ['book'], 'english', 'Where is Waldo', 5))
 
     def test_index_doc_with_markers(self):
         index = self._make_one()
 
         from repoze.pgtextindex.interfaces import IWeightedText
-        from zope.interface import implements
+        from zope.interface import implementer
 
-        class DummyText(unicode):
-            implements(IWeightedText)
+        @implementer(IWeightedText)
+        class DummyText(unicd):
             marker = ['book', 'club']
 
         index.index_doc(5, DummyText('Where is Waldo'))
@@ -615,11 +618,11 @@ class TestPGTextIndex(unittest.TestCase):
     def test_apply_weighted_query_normal(self):
         index = self._make_one()
 
-        from zope.interface import implements
+        from zope.interface import implementer
         from repoze.pgtextindex.interfaces import IWeightedQuery
 
-        class DummyWeightedQuery(unicode):
-            implements(IWeightedQuery)
+        @implementer(IWeightedQuery)
+        class DummyWeightedQuery(unicd):
             A = 16 ** 3
             B = 16 ** 2
             C = 16
@@ -655,11 +658,11 @@ class TestPGTextIndex(unittest.TestCase):
     def test_store_in_cache(self):
         index = self._make_one()
 
-        from zope.interface import implements
+        from zope.interface import implementer
         from repoze.pgtextindex.interfaces import IWeightedQuery
 
-        class DummyWeightedQuery(unicode):
-            implements(IWeightedQuery)
+        @implementer(IWeightedQuery)
+        class DummyWeightedQuery(unicd):
             A = 16 ** 3
             B = 16 ** 2
             C = 16
@@ -675,11 +678,11 @@ class TestPGTextIndex(unittest.TestCase):
     def test_cache_hit(self):
         index = self._make_one()
 
-        from zope.interface import implements
+        from zope.interface import implementer
         from repoze.pgtextindex.interfaces import IWeightedQuery
 
-        class DummyWeightedQuery(unicode):
-            implements(IWeightedQuery)
+        @implementer(IWeightedQuery)
+        class DummyWeightedQuery(unicd):
             A = 16 ** 3
             B = 16 ** 2
             C = 16
@@ -697,11 +700,11 @@ class TestPGTextIndex(unittest.TestCase):
     def test_apply_weighted_query_with_deprecated_text_method(self):
         index = self._make_one()
 
-        from zope.interface import implements
+        from zope.interface import implementer
         from repoze.pgtextindex.interfaces import IWeightedQuery
 
-        class DummyWeightedQuery(unicode):
-            implements(IWeightedQuery)
+        @implementer(IWeightedQuery)
+        class DummyWeightedQuery(unicd):
             A = 16 ** 3
             B = 16 ** 2
             C = 16
@@ -738,11 +741,11 @@ class TestPGTextIndex(unittest.TestCase):
     def test_apply_with_marker(self):
         index = self._make_one()
 
-        from zope.interface import implements
+        from zope.interface import implementer
         from repoze.pgtextindex.interfaces import IWeightedQuery
 
-        class DummyWeightedQuery(unicode):
-            implements(IWeightedQuery)
+        @implementer(IWeightedQuery)
+        class DummyWeightedQuery(unicd):
             marker = 'book'
 
         q = DummyWeightedQuery('Waldo Wally')
@@ -777,11 +780,11 @@ class TestPGTextIndex(unittest.TestCase):
     def test_apply_with_limit_and_offset(self):
         index = self._make_one()
 
-        from zope.interface import implements
+        from zope.interface import implementer
         from repoze.pgtextindex.interfaces import IWeightedQuery
 
-        class DummyWeightedQuery(unicode):
-            implements(IWeightedQuery)
+        @implementer(IWeightedQuery)
+        class DummyWeightedQuery(unicd):
             limit = 5
             offset = 10
 
@@ -818,11 +821,11 @@ class TestPGTextIndex(unittest.TestCase):
     def test_apply_with_all_weight_and_limit_features(self):
         index = self._make_one()
 
-        from zope.interface import implements
+        from zope.interface import implementer
         from repoze.pgtextindex.interfaces import IWeightedQuery
 
-        class DummyWeightedQuery(unicode):
-            implements(IWeightedQuery)
+        @implementer(IWeightedQuery)
+        class DummyWeightedQuery(unicd):
             A = 16 ** 3
             B = 16 ** 2
             C = 16

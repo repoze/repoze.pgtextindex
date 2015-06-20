@@ -1,4 +1,5 @@
 
+from repoze.pgtextindex.compat import basestr
 from repoze.pgtextindex.queryparser import QueryParser
 from repoze.pgtextindex.queryparser import remove_special_chars
 
@@ -32,7 +33,7 @@ class ParseTreeEncoder:
 
     def get_string(self, node):
         value = node.getValue()
-        if not isinstance(value, basestring):
+        if not isinstance(value, basestr):
             value = ' '.join(value)
         res = remove_special_chars(value)
         res = res.replace('\\', '\\\\').replace("'", "''")

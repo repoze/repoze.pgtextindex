@@ -1,6 +1,7 @@
 
 import unittest
 
+
 class TestPostgresConnectionManager(unittest.TestCase):
 
     def setUp(self):
