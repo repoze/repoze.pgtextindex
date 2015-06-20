@@ -10,6 +10,9 @@
   controls the threshold for disabling ranking.  The default max_ranked
   value is 6000.
 
+- Improved speed by using BTrees instead of Buckets and by using
+  cursor.fetchall() instead of iter(cursor).
+
 
 1.3 (2014-09-03)
 ================

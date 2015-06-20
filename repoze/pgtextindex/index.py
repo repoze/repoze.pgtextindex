@@ -367,7 +367,7 @@ class PGTextIndex(Persistent):
         cursor = self.cursor
         cursor.execute(stmt)
         res = self.family.IF.Set()
-        for row in cursor:
+        for row in cursor.fetchall():
             res.add(row[0])
         return res
 
@@ -401,7 +401,7 @@ class PGTextIndex(Persistent):
         cursor.execute(stmt, params + tuple(raw_texts))
         return [
             summary.decode(self.connection.encoding)
-            for (summary,) in cursor]
+            for (summary,) in cursor.fetchall()]
 
     def apply_intersect(self, query, docids):
         """ Run the query implied by query, and return query results
