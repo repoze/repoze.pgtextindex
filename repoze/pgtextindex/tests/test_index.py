@@ -652,6 +652,48 @@ class TestPGTextIndex(unittest.TestCase):
         self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
+    def test_store_in_cache(self):
+        index = self._make_one()
+
+        from zope.interface import implements
+        from repoze.pgtextindex.interfaces import IWeightedQuery
+
+        class DummyWeightedQuery(unicode):
+            implements(IWeightedQuery)
+            A = 16 ** 3
+            B = 16 ** 2
+            C = 16
+            D = 1
+            cache_enabled = True
+
+        q = DummyWeightedQuery('Waldo Wally')
+        res = index.apply(q)
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
+        self.assertEqual(len(res), 2)
+        self.assertEqual({(False, None): res}, q.cache)
+
+    def test_cache_hit(self):
+        index = self._make_one()
+
+        from zope.interface import implements
+        from repoze.pgtextindex.interfaces import IWeightedQuery
+
+        class DummyWeightedQuery(unicode):
+            implements(IWeightedQuery)
+            A = 16 ** 3
+            B = 16 ** 2
+            C = 16
+            D = 1
+            cache_enabled = True
+
+        q = DummyWeightedQuery('Waldo Wally')
+        res1 = index.apply(q)
+        res2 = index.apply(q)
+        self.assertIs(res1, res2)
+        self.assertTrue(isinstance(res1, index.family.IF.BTree))
+        self.assertEqual(len(res1), 2)
+        self.assertEqual({(False, None): res1}, q.cache)
+
     def test_apply_weighted_query_with_deprecated_text_method(self):
         index = self._make_one()
 
