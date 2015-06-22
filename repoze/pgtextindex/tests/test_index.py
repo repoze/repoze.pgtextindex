@@ -2,6 +2,7 @@
 import unittest
 
 class TestPGTextIndex(unittest.TestCase):
+    maxDiff = None
 
     @property
     def _class(self):
@@ -59,6 +60,9 @@ class TestPGTextIndex(unittest.TestCase):
 
             def fetchone(self):
                 return results[0]
+
+            def fetchall(self):
+                return list(results)
 
         return self._class(discriminator, dsn,
             connection_manager_factory=DummyConnectionManager, **kw)
@@ -488,15 +492,24 @@ class TestPGTextIndex(unittest.TestCase):
         res = index.apply('Waldo Wally')
         lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
-            'SELECT docid, coefficient *',
-            "ts_rank_cd(text_vector, to_tsquery(%s, %s)) AS rank",
+            'WITH _filtered AS (',
+            'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
-            'WHERE (text_vector @@ to_tsquery(%s, %s))',
+            'WHERE (text_vector @@ to_tsquery(%s, %s)) ),',
+            '_counter AS (SELECT count(1) AS n FROM _filtered),',
+            '_ranked AS (',
+            'SELECT docid, coefficient * (',
+            'CASE WHEN n <= 6000 THEN',
+            "ts_rank_cd(text_vector, to_tsquery(%s, %s))",
+            'ELSE 1 END) AS rank',
+            'FROM _filtered, _counter)',
+            'SELECT docid, rank',
+            'FROM _ranked',
             'ORDER BY rank DESC',
         ])
         self.assertEqual(params, ('english', "( 'Waldo' ) & ( 'Wally' )",
                                   'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_applyEq(self):
@@ -504,15 +517,24 @@ class TestPGTextIndex(unittest.TestCase):
         res = index.applyEq('Waldo Wally')
         lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
-            'SELECT docid, coefficient *',
-            "ts_rank_cd(text_vector, to_tsquery(%s, %s)) AS rank",
+            'WITH _filtered AS (',
+            'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
-            'WHERE (text_vector @@ to_tsquery(%s, %s))',
+            'WHERE (text_vector @@ to_tsquery(%s, %s)) ),',
+            '_counter AS (SELECT count(1) AS n FROM _filtered),',
+            '_ranked AS (',
+            'SELECT docid, coefficient * (',
+            'CASE WHEN n <= 6000 THEN',
+            "ts_rank_cd(text_vector, to_tsquery(%s, %s))",
+            'ELSE 1 END) AS rank',
+            'FROM _filtered, _counter)',
+            'SELECT docid, rank',
+            'FROM _ranked',
             'ORDER BY rank DESC',
         ])
         self.assertEqual(params, ('english', "( 'Waldo' ) & ( 'Wally' )",
                                   'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_applyContains(self):
@@ -520,15 +542,24 @@ class TestPGTextIndex(unittest.TestCase):
         res = index.applyContains('Waldo Wally')
         lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
-            'SELECT docid, coefficient *',
-            "ts_rank_cd(text_vector, to_tsquery(%s, %s)) AS rank",
+            'WITH _filtered AS (',
+            'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
-            'WHERE (text_vector @@ to_tsquery(%s, %s))',
+            'WHERE (text_vector @@ to_tsquery(%s, %s)) ),',
+            '_counter AS (SELECT count(1) AS n FROM _filtered),',
+            '_ranked AS (',
+            'SELECT docid, coefficient * (',
+            'CASE WHEN n <= 6000 THEN',
+            "ts_rank_cd(text_vector, to_tsquery(%s, %s))",
+            'ELSE 1 END) AS rank',
+            'FROM _filtered, _counter)',
+            'SELECT docid, rank',
+            'FROM _ranked',
             'ORDER BY rank DESC',
         ])
         self.assertEqual(params, ('english', "( 'Waldo' ) & ( 'Wally' )",
                                   'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_applyNotEq(self):
@@ -536,15 +567,24 @@ class TestPGTextIndex(unittest.TestCase):
         res = index.applyNotEq('Waldo Wally')
         lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
-            'SELECT docid, coefficient *',
-            "ts_rank_cd(text_vector, to_tsquery(%s, %s)) AS rank",
+            'WITH _filtered AS (',
+            'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
-            'WHERE NOT(text_vector @@ to_tsquery(%s, %s))',
+            'WHERE NOT(text_vector @@ to_tsquery(%s, %s)) ),',
+            '_counter AS (SELECT count(1) AS n FROM _filtered),',
+            '_ranked AS (',
+            'SELECT docid, coefficient * (',
+            'CASE WHEN n <= 6000 THEN',
+            "ts_rank_cd(text_vector, to_tsquery(%s, %s))",
+            'ELSE 1 END) AS rank',
+            'FROM _filtered, _counter)',
+            'SELECT docid, rank',
+            'FROM _ranked',
             'ORDER BY rank DESC',
         ])
         self.assertEqual(params, ('english', "( 'Waldo' ) & ( 'Wally' )",
                                   'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_applyDoesNotContain(self):
@@ -552,15 +592,24 @@ class TestPGTextIndex(unittest.TestCase):
         res = index.applyDoesNotContain('Waldo Wally')
         lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
-            'SELECT docid, coefficient *',
-            "ts_rank_cd(text_vector, to_tsquery(%s, %s)) AS rank",
+            'WITH _filtered AS (',
+            'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
-            'WHERE NOT(text_vector @@ to_tsquery(%s, %s))',
+            'WHERE NOT(text_vector @@ to_tsquery(%s, %s)) ),',
+            '_counter AS (SELECT count(1) AS n FROM _filtered),',
+            '_ranked AS (',
+            'SELECT docid, coefficient * (',
+            'CASE WHEN n <= 6000 THEN',
+            "ts_rank_cd(text_vector, to_tsquery(%s, %s))",
+            'ELSE 1 END) AS rank',
+            'FROM _filtered, _counter)',
+            'SELECT docid, rank',
+            'FROM _ranked',
             'ORDER BY rank DESC',
         ])
         self.assertEqual(params, ('english', "( 'Waldo' ) & ( 'Wally' )",
                                   'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_apply_weighted_query_normal(self):
@@ -580,18 +629,70 @@ class TestPGTextIndex(unittest.TestCase):
         res = index.apply(q)
         lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
-            'SELECT docid, coefficient *',
-            "ts_rank_cd('{%s, %s, %s, %s}', "
-                "text_vector, to_tsquery(%s, %s)) AS rank",
+            'WITH _filtered AS (',
+            'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
-            'WHERE (text_vector @@ to_tsquery(%s, %s))',
+            'WHERE (text_vector @@ to_tsquery(%s, %s)) ),',
+            '_counter AS (SELECT count(1) AS n FROM _filtered),',
+            '_ranked AS (',
+            'SELECT docid, coefficient * (',
+            'CASE WHEN n <= 6000 THEN',
+            "ts_rank_cd('{%s, %s, %s, %s}', "
+            "text_vector, to_tsquery(%s, %s))",
+            'ELSE 1 END) AS rank',
+            'FROM _filtered, _counter)',
+            'SELECT docid, rank',
+            'FROM _ranked',
             'ORDER BY rank DESC',
         ])
-        self.assertEqual(params, (1, 16, 256, 4096,
-                                  'english', "( 'Waldo' ) & ( 'Wally' )",
-                                  'english', "( 'Waldo' ) & ( 'Wally' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(params, (
+            'english', "( 'Waldo' ) & ( 'Wally' )",
+            1, 16, 256, 4096,
+            'english', "( 'Waldo' ) & ( 'Wally' )"))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
+
+    def test_store_in_cache(self):
+        index = self._make_one()
+
+        from zope.interface import implements
+        from repoze.pgtextindex.interfaces import IWeightedQuery
+
+        class DummyWeightedQuery(unicode):
+            implements(IWeightedQuery)
+            A = 16 ** 3
+            B = 16 ** 2
+            C = 16
+            D = 1
+            cache_enabled = True
+
+        q = DummyWeightedQuery('Waldo Wally')
+        res = index.apply(q)
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
+        self.assertEqual(len(res), 2)
+        self.assertEqual({(False, None): res}, q.cache)
+
+    def test_cache_hit(self):
+        index = self._make_one()
+
+        from zope.interface import implements
+        from repoze.pgtextindex.interfaces import IWeightedQuery
+
+        class DummyWeightedQuery(unicode):
+            implements(IWeightedQuery)
+            A = 16 ** 3
+            B = 16 ** 2
+            C = 16
+            D = 1
+            cache_enabled = True
+
+        q = DummyWeightedQuery('Waldo Wally')
+        res1 = index.apply(q)
+        res2 = index.apply(q)
+        self.assertIs(res1, res2)
+        self.assertTrue(isinstance(res1, index.family.IF.BTree))
+        self.assertEqual(len(res1), 2)
+        self.assertEqual({(False, None): res1}, q.cache)
 
     def test_apply_weighted_query_with_deprecated_text_method(self):
         index = self._make_one()
@@ -611,17 +712,27 @@ class TestPGTextIndex(unittest.TestCase):
         res = index.apply(q)
         lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
-            'SELECT docid, coefficient *',
-            "ts_rank_cd('{%s, %s, %s, %s}', "
-                "text_vector, to_tsquery(%s, %s)) AS rank",
+            'WITH _filtered AS (',
+            'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
-            'WHERE (text_vector @@ to_tsquery(%s, %s))',
+            'WHERE (text_vector @@ to_tsquery(%s, %s)) ),',
+            '_counter AS (SELECT count(1) AS n FROM _filtered),',
+            '_ranked AS (',
+            'SELECT docid, coefficient * (',
+            'CASE WHEN n <= 6000 THEN',
+            "ts_rank_cd('{%s, %s, %s, %s}', "
+            "text_vector, to_tsquery(%s, %s))",
+            'ELSE 1 END) AS rank',
+            'FROM _filtered, _counter)',
+            'SELECT docid, rank',
+            'FROM _ranked',
             'ORDER BY rank DESC',
         ])
-        self.assertEqual(params, (1, 16, 256, 4096,
-                                  'english', "( 'Surly' ) & ( 'Susan' )",
-                                  'english', "( 'Surly' ) & ( 'Susan' )"))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(params, (
+            'english', "( 'Surly' ) & ( 'Susan' )",
+            1, 16, 256, 4096,
+            'english', "( 'Surly' ) & ( 'Susan' )"))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_apply_with_marker(self):
@@ -638,19 +749,29 @@ class TestPGTextIndex(unittest.TestCase):
         res = index.apply(q)
         lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
-            'SELECT docid, coefficient *',
-            "ts_rank_cd('{%s, %s, %s, %s}', "
-                "text_vector, to_tsquery(%s, %s)) AS rank",
+            'WITH _filtered AS (',
+            'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
-            'WHERE (text_vector @@ to_tsquery(%s, %s))',
-            'AND %s = ANY(marker)',
+            'WHERE (text_vector @@ to_tsquery(%s, %s)) '
+            ' AND marker && %s::character varying[]),',
+            '_counter AS (SELECT count(1) AS n FROM _filtered),',
+            '_ranked AS (',
+            'SELECT docid, coefficient * (',
+            'CASE WHEN n <= 6000 THEN',
+            "ts_rank_cd('{%s, %s, %s, %s}', "
+            "text_vector, to_tsquery(%s, %s))",
+            'ELSE 1 END) AS rank',
+            'FROM _filtered, _counter)',
+            'SELECT docid, rank',
+            'FROM _ranked',
             'ORDER BY rank DESC',
         ])
-        self.assertEqual(params, (0.1, 0.2, 0.4, 1.0,
-                                  'english', "( 'Waldo' ) & ( 'Wally' )",
-                                  'english', "( 'Waldo' ) & ( 'Wally' )",
-                                  'book'))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(params, (
+            'english', "( 'Waldo' ) & ( 'Wally' )",
+            ['book'],
+            0.1, 0.2, 0.4, 1.0,
+            'english', "( 'Waldo' ) & ( 'Wally' )"))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_apply_with_limit_and_offset(self):
@@ -668,20 +789,30 @@ class TestPGTextIndex(unittest.TestCase):
         res = index.apply(q)
         lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
-            'SELECT docid, coefficient *',
-            "ts_rank_cd('{%s, %s, %s, %s}', "
-                "text_vector, to_tsquery(%s, %s)) AS rank",
+            'WITH _filtered AS (',
+            'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
-            'WHERE (text_vector @@ to_tsquery(%s, %s))',
+            'WHERE (text_vector @@ to_tsquery(%s, %s)) ),',
+            '_counter AS (SELECT count(1) AS n FROM _filtered),',
+            '_ranked AS (',
+            'SELECT docid, coefficient * (',
+            'CASE WHEN n <= 6000 THEN',
+            "ts_rank_cd('{%s, %s, %s, %s}', "
+            "text_vector, to_tsquery(%s, %s))",
+            'ELSE 1 END) AS rank',
+            'FROM _filtered, _counter)',
+            'SELECT docid, rank',
+            'FROM _ranked',
             'ORDER BY rank DESC',
             'LIMIT %s',
             'OFFSET %s',
         ])
-        self.assertEqual(params, (0.1, 0.2, 0.4, 1.0,
-                                  'english', "( 'Waldo' ) & ( 'Wally' )",
-                                  'english', "( 'Waldo' ) & ( 'Wally' )",
-                                  5, 10))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(params, (
+            'english', "( 'Waldo' ) & ( 'Wally' )",
+            0.1, 0.2, 0.4, 1.0,
+            'english', "( 'Waldo' ) & ( 'Wally' )",
+            5, 10))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_apply_with_all_weight_and_limit_features(self):
@@ -704,21 +835,32 @@ class TestPGTextIndex(unittest.TestCase):
         res = index.apply(q)
         lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
-            'SELECT docid, coefficient *',
-            "ts_rank_cd('{%s, %s, %s, %s}', "
-                "text_vector, to_tsquery(%s, %s)) AS rank",
+            'WITH _filtered AS (',
+            'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
-            'WHERE (text_vector @@ to_tsquery(%s, %s))',
-            'AND %s = ANY(marker)',
+            'WHERE (text_vector @@ to_tsquery(%s, %s)) '
+            ' AND marker && %s::character varying[]),',
+            '_counter AS (SELECT count(1) AS n FROM _filtered),',
+            '_ranked AS (',
+            'SELECT docid, coefficient * (',
+            'CASE WHEN n <= 6000 THEN',
+            "ts_rank_cd('{%s, %s, %s, %s}', "
+            "text_vector, to_tsquery(%s, %s))",
+            'ELSE 1 END) AS rank',
+            'FROM _filtered, _counter)',
+            'SELECT docid, rank',
+            'FROM _ranked',
             'ORDER BY rank DESC',
             'LIMIT %s',
             'OFFSET %s',
         ])
-        self.assertEqual(params, (1, 16, 256, 4096,
-                                  'english', "( 'Waldo' ) & ( 'Wally' )",
-                                  'english', "( 'Waldo' ) & ( 'Wally' )",
-                                  'book', 5, 10))
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertEqual(params, (
+            'english', "( 'Waldo' ) & ( 'Wally' )",
+            ['book'],
+            1, 16, 256, 4096,
+            'english', "( 'Waldo' ) & ( 'Wally' )",
+            5, 10))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
 
     def test_docids(self):
@@ -735,22 +877,31 @@ class TestPGTextIndex(unittest.TestCase):
     def test_apply_intersect_with_no_docids(self):
         index = self._make_one()
         res = index.apply_intersect('Waldo', [])
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 0)
         self.assertEqual(len(self.executed), 0)
 
     def test_apply_intersect_with_docids(self):
         index = self._make_one()
-        res = index.apply_intersect('Waldo', [8,6,7])
-        self.assertTrue(isinstance(res, index.family.IF.Bucket))
+        res = index.apply_intersect('Waldo', [8, 6, 7])
+        self.assertTrue(isinstance(res, index.family.IF.BTree))
         self.assertEqual(len(res), 2)
         lines, params = self._format_executed(self.executed)
         self.assertEqual(lines, [
-            'SELECT docid, coefficient *',
-            "ts_rank_cd(text_vector, to_tsquery(%s, %s)) AS rank",
+            'WITH _filtered AS (',
+            'SELECT docid, coefficient, text_vector',
             'FROM pgtextindex',
-            'WHERE (text_vector @@ to_tsquery(%s, %s))',
-            'AND docid IN (8,6,7)',
+            'WHERE (text_vector @@ to_tsquery(%s, %s)) '
+            ' AND docid IN (8,6,7)),',
+            '_counter AS (SELECT count(1) AS n FROM _filtered),',
+            '_ranked AS (',
+            'SELECT docid, coefficient * (',
+            'CASE WHEN n <= 6000 THEN',
+            "ts_rank_cd(text_vector, to_tsquery(%s, %s))",
+            'ELSE 1 END) AS rank',
+            'FROM _filtered, _counter)',
+            'SELECT docid, rank',
+            'FROM _ranked',
             'ORDER BY rank DESC',
         ])
         self.assertEqual(params, ('english', "'Waldo'", 'english', "'Waldo'"))
@@ -797,7 +948,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_sort_normal(self):
         index = self._make_one()
-        bucket = index.family.IF.Bucket([
+        bucket = index.family.IF.BTree([
             (8, 0.3),
             (4, -0.5),
             (9, 0.0),
@@ -807,7 +958,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_sort_reverse(self):
         index = self._make_one()
-        bucket = index.family.IF.Bucket([
+        bucket = index.family.IF.BTree([
             (8, 0.3),
             (4, -0.5),
             (9, 0.0),
@@ -817,7 +968,7 @@ class TestPGTextIndex(unittest.TestCase):
 
     def test_sort_limited(self):
         index = self._make_one()
-        bucket = index.family.IF.Bucket([
+        bucket = index.family.IF.BTree([
             (8, 0.3),
             (4, -0.5),
             (9, 0.0),

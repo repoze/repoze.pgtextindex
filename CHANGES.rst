@@ -1,3 +1,19 @@
+1.4 (2015-06-20)
+================
+
+- WeightedQueries can now be used as query result caches, making it
+  possible to search the catalog many times while hitting the text
+  index only once.
+
+- When a query generates a large number of results, pgtextindex now disables
+  the expensive text ranking for that query.  The max_ranked attribute
+  controls the threshold for disabling ranking.  The default max_ranked
+  value is 6000.
+
+- Improved speed by using BTrees instead of Buckets and by using
+  cursor.fetchall() instead of iter(cursor).
+
+
 1.3 (2014-09-03)
 ================
 
@@ -6,6 +22,7 @@
   marker strings. Since the database schema has changed, 
   'PGTextIndex.upgrade()' will need to be run on any indexes created with an 
   older version of the code. (LP #1353483)
+
 
 1.2 (2012-10-09)
 ================

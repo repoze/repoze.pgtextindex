@@ -26,6 +26,7 @@ class PGTextIndex(Persistent):
     connection_manager_factory = PostgresConnectionManager
     _v_temp_cm = None  # A PostgresConnectionManager used during initialization
     maxlen = 1048575
+    max_ranked = 6000
 
     def __init__(self,
                  discriminator,
@@ -160,7 +161,7 @@ class PGTextIndex(Persistent):
             coefficient = getattr(value, 'coefficient', 1.0)
             marker = getattr(value, 'marker', [])
             if isinstance(marker, basestring):
-                marker = [marker,]
+                marker = [marker]
             params = [coefficient, marker]
             text = '%s' % value  # Call the __str__() method
             if text:
@@ -264,29 +265,48 @@ class PGTextIndex(Persistent):
             'filter': '',
             'limit': '',
             'offset': '',
+            'max_ranked': self.max_ranked,
         }
 
         if invert:
             kw['not'] = 'NOT'
 
+        cache = None
+
         if IWeightedQuery.providedBy(query):
+
+            if getattr(query, 'cache_enabled', False):
+                cache_key = (invert, docids)
+                cache = getattr(query, 'cache', None)
+                if cache is None:
+                    query.cache = cache = {}
+                result = cache.get(cache_key)
+                if result is not None:
+                    # Cache hit.
+                    return result
+
             kw['weight'] = "'{%s, %s, %s, %s}', "
             text = getattr(query, 'text', None)
             if text is None:
                 text = '%s' % query  # Use __str__()
             cq = convert_query(text)
-            params = [getattr(query, 'D', 0.1),
-                      getattr(query, 'C', 0.2),
-                      getattr(query, 'B', 0.4),
-                      getattr(query, 'A', 1.0),
-                      self.ts_config,
-                      cq,
-                      self.ts_config,
-                      cq]
+            params = [
+                self.ts_config,
+                cq,
+                getattr(query, 'D', 0.1),
+                getattr(query, 'C', 0.2),
+                getattr(query, 'B', 0.4),
+                getattr(query, 'A', 1.0),
+                self.ts_config,
+                cq,
+            ]
             marker = getattr(query, 'marker', None)
             if marker:
-                kw['filter'] += " AND %s = ANY(marker)"
-                params.append(marker)
+                # Match any marker value.
+                if isinstance(marker, basestring):
+                    marker = [marker]
+                kw['filter'] += " AND marker && %s::character varying[]"
+                params.insert(2, marker)
             limit = getattr(query, 'limit', None)
             if limit:
                 kw['limit'] = "LIMIT %s"
@@ -304,32 +324,39 @@ class PGTextIndex(Persistent):
             kw['filter'] += ' AND docid IN (%s)' % docidstr
 
         stmt = """
-        SELECT docid, coefficient *
-            ts_rank_cd(%(weight)stext_vector, to_tsquery(%%s, %%s)) AS rank
-        FROM %(table)s
-        WHERE %(not)s(text_vector @@ to_tsquery(%%s, %%s))
-        %(filter)s
+        WITH _filtered AS (
+            SELECT docid, coefficient, text_vector
+            FROM %(table)s
+            WHERE %(not)s(text_vector @@ to_tsquery(%%s, %%s)) %(filter)s),
+        _counter AS (SELECT count(1) AS n FROM _filtered),
+        _ranked AS (
+            SELECT docid, coefficient * (
+                CASE WHEN n <= %(max_ranked)s THEN
+                    ts_rank_cd(%(weight)stext_vector, to_tsquery(%%s, %%s))
+                ELSE 1 END) AS rank
+            FROM _filtered, _counter)
+        SELECT docid, rank
+        FROM _ranked
         ORDER BY rank DESC
         %(limit)s
         %(offset)s
         """ % kw
+
         cursor = self.cursor
         cursor.execute(stmt, tuple(params))
-        return cursor
+        result = self.family.IF.BTree()
+        result.update(cursor.fetchall())
+
+        if cache is not None:
+            cache[cache_key] = result
+
+        return result
 
     def applyContains(self, query):
-        cursor = self._run_query(query)
-        data = list(cursor)
-        res = self.family.IF.Bucket()
-        res.update(data)
-        return res
+        return self._run_query(query)
 
     def applyDoesNotContain(self, query):
-        cursor = self._run_query(query, invert=True)
-        data = list(cursor)
-        res = self.family.IF.Bucket()
-        res.update(data)
-        return res
+        return self._run_query(query, invert=True)
 
     apply = applyEq = applyContains  # @ReservedAssignment
     applyNotEq = applyDoesNotContain
@@ -340,7 +367,7 @@ class PGTextIndex(Persistent):
         cursor = self.cursor
         cursor.execute(stmt)
         res = self.family.IF.Set()
-        for row in cursor:
+        for row in cursor.fetchall():
             res.add(row[0])
         return res
 
@@ -372,8 +399,9 @@ class PGTextIndex(Persistent):
         cursor = self.cursor
         params = (self.ts_config, self.ts_config, s, options)
         cursor.execute(stmt, params + tuple(raw_texts))
-        return [summary.decode(self.connection.encoding)
-            for (summary,) in cursor]
+        return [
+            summary.decode(self.connection.encoding)
+            for (summary,) in cursor.fetchall()]
 
     def apply_intersect(self, query, docids):
         """ Run the query implied by query, and return query results
@@ -381,12 +409,8 @@ class PGTextIndex(Persistent):
         ``docids`` is None, return the bare query results.
         """
         if not docids:
-            return self.family.IF.Bucket()
-        cursor = self._run_query(query, docids=docids)
-        data = list(cursor)
-        res = self.family.IF.Bucket()
-        res.update(data)
-        return res
+            return self.family.IF.BTree()
+        return self._run_query(query, docids=docids)
 
     @metricmethod
     def sort(self, result, reverse=False, limit=None, sort_type=None):
